@@ -1,0 +1,161 @@
+// Copyright KuoYu. All Rights Reserved.
+// WaveformScope.usf - 波形图 Compute Shader
+//
+// 两阶段方案：
+// Pass 1 (AccumulateCS): 读取输入纹理，原子累加密度到 RWBuffer<uint>
+// Pass 2 (VisualizeCS):  读取密度 Buffer，写入 RGBA 输出纹理
+//
+// 密度图坐标系：
+//   X 轴 = 画面水平位置（列）
+//   Y 轴 = 亮度值（底部=0 暗，顶部=1 亮）
+//
+// 渲染算法（参考 kdenlive WaveformGenerator Green 模式）：
+//   1. gain = 255 / (8 * pixelDepth)，其中 pixelDepth = totalPixels / (scopeW * scopeH)
+//   2. value = gain * density
+//   3. 对 R/G/B 分量分别取对数：logR = log(0.1*value), logG = log(value), logB = log(0.25*value)
+//   4. alpha = clamp(64 * log(value), 0, 255) / 255
+//   5. 最终颜色 = lerp(背景色, 52*log(component)/255, alpha)
+
+#include "/Engine/Private/Common.ush"
+
+// ============================================================
+// 共享参数
+// ============================================================
+
+Texture2D InputTexture;
+SamplerState InputSampler;
+
+uint2 InputSize;
+uint2 OutputSize;
+
+float3 LuminanceWeights;
+
+// ============================================================
+// Pass 1: 密度累加
+// ============================================================
+
+RWBuffer<uint> DensityBuffer;
+
+#define ACCUMULATE_GROUP_SIZE 256
+
+[numthreads(ACCUMULATE_GROUP_SIZE, 1, 1)]
+void AccumulateCS(
+	uint3 GroupId : SV_GroupID,
+	uint3 DispatchThreadId : SV_DispatchThreadID,
+	uint GroupIndex : SV_GroupIndex)
+{
+	uint OutCol = GroupId.x;
+	if (OutCol >= OutputSize.x)
+		return;
+
+	// 计算该输出列对应的输入列范围
+	float ColStart = (float)OutCol / (float)OutputSize.x * (float)InputSize.x;
+	float ColEnd = (float)(OutCol + 1) / (float)OutputSize.x * (float)InputSize.x;
+	uint InputColStart = (uint)ColStart;
+	uint InputColEnd = min((uint)ceil(ColEnd), InputSize.x);
+
+	for (uint Row = GroupIndex; Row < InputSize.y; Row += ACCUMULATE_GROUP_SIZE)
+	{
+		for (uint Col = InputColStart; Col < InputColEnd; Col++)
+		{
+			float2 UV = (float2(Col, Row) + 0.5f) / float2(InputSize);
+			float4 Color = InputTexture.SampleLevel(InputSampler, UV, 0);
+
+			float Luminance = dot(Color.rgb, LuminanceWeights);
+			Luminance = saturate(Luminance);
+
+			// Y=0 是顶部（亮度=1），Y=OutputSize.y-1 是底部（亮度=0）
+			uint OutRow = OutputSize.y - 1 - (uint)(Luminance * (float)(OutputSize.y - 1));
+			OutRow = min(OutRow, OutputSize.y - 1);
+
+			uint BufferIndex = OutRow * OutputSize.x + OutCol;
+			InterlockedAdd(DensityBuffer[BufferIndex], 1u);
+		}
+	}
+}
+
+// ============================================================
+// Pass 2: 可视化渲染（kdenlive Green 模式算法）
+// ============================================================
+
+Buffer<uint> DensityBufferSRV;
+RWTexture2D<float4> OutputTexture;
+
+// 输入像素总数（用于计算 gain）
+uint TotalInputPixels;
+
+#define VISUALIZE_GROUP_SIZE_X 16
+#define VISUALIZE_GROUP_SIZE_Y 16
+
+[numthreads(VISUALIZE_GROUP_SIZE_X, VISUALIZE_GROUP_SIZE_Y, 1)]
+void VisualizeCS(
+	uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+	uint2 Pos = DispatchThreadId.xy;
+	if (Pos.x >= OutputSize.x || Pos.y >= OutputSize.y)
+		return;
+
+	// 深黑背景色（与 kdenlive 的 darkBackground(25,25,23) 对齐）
+	float3 BgColor = float3(25.0f / 255.0f, 25.0f / 255.0f, 23.0f / 255.0f);
+	float3 OutColor = BgColor;
+
+	float YRatio = (float)Pos.y / (float)(OutputSize.y - 1);
+	float XRatio = (float)Pos.x / (float)(OutputSize.x - 1);
+
+	// ---- 网格参考线（11 条水平线，对应 IRE 0-100 每 10% 一条） ----
+	float GridIntensity = 0.0f;
+	for (int i = 0; i <= 10; i++)
+	{
+		float LineY = (float)i * 0.1f;
+		float Dist = abs(YRatio - LineY) * (float)OutputSize.y;
+		if (Dist < 0.6f)
+		{
+			// 使用绿色调的网格线（与 kdenlive 的 QColor(150, 255, 200, 32) 对齐）
+			GridIntensity = max(GridIntensity, 0.06f * (1.0f - Dist / 0.6f));
+		}
+	}
+	OutColor += float3(GridIntensity * 0.59f, GridIntensity * 1.0f, GridIntensity * 0.78f);
+
+	// ---- 密度可视化（kdenlive Green 模式算法） ----
+	uint Density = DensityBufferSRV[Pos.y * OutputSize.x + Pos.x];
+
+	if (Density > 0 && TotalInputPixels > 0)
+	{
+		// kdenlive 的 gain 计算：
+		// pixelDepth = totalPixels / (scopeW * scopeH) — 每个 scope 像素期望的输入像素数
+		// gain = 255 / (8 * pixelDepth)
+		float PixelDepth = (float)TotalInputPixels / (float)(OutputSize.x * OutputSize.y);
+		float Gain = 255.0f / (8.0f * max(PixelDepth, 0.001f));
+
+		// 线性归一化值
+		float Value = Gain * (float)Density;
+
+		// 对数映射（kdenlive Green 模式的核心算法）
+		float LogValue = Value > 0.0f ? log(Value) : 0.0f;
+
+		// R/G/B 分量各自的值（Green 模式：R=0.1*v, G=v, B=0.25*v）
+		float RValue = 0.1f * Value;
+		float GValue = Value;
+		float BValue = 0.25f * Value;
+
+		float LogR = RValue > 0.0f ? log(RValue) : 0.0f;
+		float LogG = GValue > 0.0f ? log(GValue) : 0.0f;
+		float LogB = BValue > 0.0f ? log(BValue) : 0.0f;
+
+		// Alpha 混合（64 * logValue，clamp 到 [0, 255]）
+		float Alpha = clamp(64.0f * LogValue, 0.0f, 255.0f) / 255.0f;
+		float InvAlpha = 1.0f - Alpha;
+
+		// 颜色强度（52 * log(component)，clamp 到 [0, 255]）
+		float FinalR = clamp(52.0f * LogR, 0.0f, 255.0f) / 255.0f;
+		float FinalG = clamp(52.0f * LogG, 0.0f, 255.0f) / 255.0f;
+		float FinalB = clamp(52.0f * LogB, 0.0f, 255.0f) / 255.0f;
+
+		// 与背景色混合（与 kdenlive 完全一致的混合公式）
+		OutColor.r = BgColor.r * InvAlpha + FinalR * Alpha;
+		OutColor.g = BgColor.g * InvAlpha + FinalG * Alpha;
+		OutColor.b = BgColor.b * InvAlpha + FinalB * Alpha;
+	}
+
+	OutputTexture[Pos] = float4(OutColor, 1.0f);
+}

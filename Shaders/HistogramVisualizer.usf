@@ -1,0 +1,156 @@
+// Copyright KuoYu. All Rights Reserved.
+// HistogramVisualizer.usf - 直方图可视化 Compute Shader
+//
+// 输入：256 个 uint 的直方图 bin 数据
+// 输出：RGBA 纹理，渲染为带颜色渐变的柱状图
+//
+// 渲染算法（参考 kdenlive HistogramGenerator + Natron 平滑方案）：
+//   - 对数 Y 轴映射：height = logScaling * log10(binValue + 1)
+//     其中 logScaling = outputHeight / log10(maxBinValue + 1)
+//   - 颜色：使用 kdenlive 的等亮度 magic colors（R/G/B 通道亮度相同）
+//   - 加法混合：RGB 三通道叠加显示
+//   - 邻域平滑：对 bin 值做 3-tap 加权平均，减少锯齿
+
+#include "/Engine/Private/Common.ush"
+
+// ============================================================
+// 参数
+// ============================================================
+
+Buffer<uint> HistogramBuffer;
+RWTexture2D<float4> OutputTexture;
+uint2 OutputSize;
+
+// 最大 bin 值 Buffer（由 GPU Reduction Pass 计算）
+Buffer<uint> MaxBinBuffer;
+
+// 输入像素总数（用于归一化）
+uint TotalInputPixels;
+
+// ============================================================
+// 常量
+// ============================================================
+
+#define HISTOGRAM_BIN_COUNT 256
+#define THREADGROUP_SIZE_X 16
+#define THREADGROUP_SIZE_Y 16
+
+// ============================================================
+// 辅助函数
+// ============================================================
+
+// 读取 bin 值（带边界检查）
+uint ReadBin(int Index)
+{
+	Index = clamp(Index, 0, HISTOGRAM_BIN_COUNT - 1);
+	return HistogramBuffer[Index];
+}
+
+// 3-tap 加权平均平滑（减少锯齿）
+float SmoothedBinValue(int BinIndex)
+{
+	float V0 = (float)ReadBin(BinIndex - 1);
+	float V1 = (float)ReadBin(BinIndex);
+	float V2 = (float)ReadBin(BinIndex + 1);
+	return V0 * 0.25f + V1 * 0.5f + V2 * 0.25f;
+}
+
+// ============================================================
+// 主 Compute Shader
+// ============================================================
+
+[numthreads(THREADGROUP_SIZE_X, THREADGROUP_SIZE_Y, 1)]
+void MainCS(
+	uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+	uint2 Pos = DispatchThreadId.xy;
+	if (Pos.x >= OutputSize.x || Pos.y >= OutputSize.y)
+		return;
+
+	// 深黑背景
+	float3 OutColor = float3(0.0f, 0.0f, 0.0f);
+
+	float YRatio = (float)Pos.y / (float)(OutputSize.y - 1);
+	float XRatio = (float)Pos.x / (float)(OutputSize.x - 1);
+
+	// ---- 网格参考线 ----
+	float GridIntensity = 0.0f;
+	// 水平线：每 10% 一条
+	for (int i = 1; i <= 9; i++)
+	{
+		float LineY = (float)i * 0.1f;
+		float Dist = abs(YRatio - LineY) * (float)OutputSize.y;
+		if (Dist < 0.6f)
+		{
+			GridIntensity = max(GridIntensity, 0.05f * (1.0f - Dist / 0.6f));
+		}
+	}
+	OutColor += float3(GridIntensity, GridIntensity, GridIntensity);
+
+	// ---- 直方图渲染（参考 kdenlive drawHistogramCPU + drawComponent） ----
+	uint MaxBinValue = MaxBinBuffer[0];
+
+	if (MaxBinValue > 0 && TotalInputPixels > 0)
+	{
+		// 当前像素对应的 bin 索引（亚像素精度）
+		float BinFloat = XRatio * (float)(HISTOGRAM_BIN_COUNT - 1);
+		int BinIndex = (int)BinFloat;
+		BinIndex = clamp(BinIndex, 0, HISTOGRAM_BIN_COUNT - 1);
+
+		// 平滑后的 bin 值
+		float BinValue = SmoothedBinValue(BinIndex);
+
+		// 对数 Y 轴映射（参考 kdenlive drawComponent 的 logScale 模式）
+		// logScaling = partH / log10(maxBinSize + 1)
+		// partY = logScaling * log10(y[x] + 1)
+		float LogScaling = 1.0f / log10((float)MaxBinValue + 1.0f);
+		float NormHeight = LogScaling * log10(BinValue + 1.0f);
+		NormHeight = saturate(NormHeight);
+
+		// 柱状条从底部向上生长
+		float BarThreshold = 1.0f - NormHeight;
+
+		if (YRatio >= BarThreshold && BinValue > 0.0f)
+		{
+			// 在柱状条内部
+			// 参考 kdenlive drawHistogramCPU 的 RGB 加法混合模式
+			// 使用等亮度 magic colors（所有通道亮度 ~0.4）
+			// R: (0.851643, 0.196936, 0.196936)
+			// G: (0.0, 0.654707, 0.0)
+			// B: (0.345293, 0.345293, 1.0)
+
+			// 归一化密度（用于 alpha 计算）
+			// 参考 kdenlive: vTotNormalized = histogram[i] / pixelsCount / binSize
+			float BinSize = 1.0f / (float)HISTOGRAM_BIN_COUNT;
+			float NormDensity = BinValue / (float)TotalInputPixels / BinSize;
+
+			// 柱状条内部的位置（0=顶部边缘，1=底部）
+			float BarLocalT = (YRatio - BarThreshold) / max(NormHeight, 0.001f);
+
+			// 颜色强度：顶部亮，底部渐暗
+			float Intensity = 0.7f + 0.3f * (1.0f - BarLocalT);
+
+			// 加法混合 RGB 三通道（模拟 kdenlive 的 GL_ONE, GL_ONE 混合）
+			// R 通道
+			float3 RColor = float3(0.851643f, 0.196936f, 0.196936f) * Intensity;
+			// G 通道
+			float3 GColor = float3(0.0f, 0.654707f, 0.0f) * Intensity;
+			// B 通道
+			float3 BColor = float3(0.345293f, 0.345293f, 1.0f) * Intensity;
+
+			// 加法混合（三通道叠加 = 白色，但各自有独立的亮度权重）
+			float3 MixedColor = RColor + GColor + BColor;
+
+			// 顶部边缘抗锯齿
+			float EdgeDist = (YRatio - BarThreshold) * (float)OutputSize.y;
+			float EdgeAlpha = saturate(EdgeDist / 1.5f);
+
+			// 底部渐隐
+			float BottomFade = 1.0f - BarLocalT * BarLocalT * 0.3f;
+
+			OutColor += MixedColor * EdgeAlpha * BottomFade;
+		}
+	}
+
+	OutputTexture[Pos] = float4(saturate(OutColor), 1.0f);
+}

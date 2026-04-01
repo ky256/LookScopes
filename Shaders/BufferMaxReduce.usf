@@ -1,0 +1,57 @@
+// Copyright KuoYu. All Rights Reserved.
+// BufferMaxReduce.usf - GPU Buffer 最大值归约 Compute Shader
+//
+// 对一个 RWBuffer<uint> 执行并行归约，找出最大值。
+// 输出到一个 1 元素的 Buffer 中。
+//
+// 使用方式：
+//   Dispatch(1, 1, 1) - 单个线程组处理整个 Buffer
+//   适用于 Buffer 长度 <= 65536 的场景
+
+#include "/Engine/Private/Common.ush"
+
+// 输入 Buffer（只读）
+Buffer<uint> InputBuffer;
+
+// 输出最大值（1 个 uint）
+RWBuffer<uint> MaxValueOutput;
+
+// Buffer 元素数量
+uint BufferLength;
+
+// 线程组大小
+#define REDUCE_GROUP_SIZE 256
+
+groupshared uint SharedMax[REDUCE_GROUP_SIZE];
+
+[numthreads(REDUCE_GROUP_SIZE, 1, 1)]
+void MainCS(
+	uint3 GroupId : SV_GroupID,
+	uint GroupIndex : SV_GroupIndex)
+{
+	// 每个线程先扫描自己负责的一段，找出局部最大值
+	uint LocalMax = 0;
+	for (uint i = GroupIndex; i < BufferLength; i += REDUCE_GROUP_SIZE)
+	{
+		LocalMax = max(LocalMax, InputBuffer[i]);
+	}
+
+	SharedMax[GroupIndex] = LocalMax;
+	GroupMemoryBarrierWithGroupSync();
+
+	// 并行归约
+	for (uint Stride = REDUCE_GROUP_SIZE / 2; Stride > 0; Stride >>= 1)
+	{
+		if (GroupIndex < Stride)
+		{
+			SharedMax[GroupIndex] = max(SharedMax[GroupIndex], SharedMax[GroupIndex + Stride]);
+		}
+		GroupMemoryBarrierWithGroupSync();
+	}
+
+	// 线程 0 写出最终结果
+	if (GroupIndex == 0)
+	{
+		MaxValueOutput[0] = max(SharedMax[0], 1u); // 至少为 1，避免除零
+	}
+}

@@ -1,0 +1,25 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1.0",
+	"FriendlyName": "Look Scopes",
+	"Description": "视口分析与视觉对标工具 - 波形图、直方图、矢量示波器、Look Match",
+	"Category": "KuoYu",
+	"CreatedBy": "KuoYu",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": false,
+	"IsBetaVersion": true,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"EnabledByDefault": true,
+	"Modules": [
+		{
+		"Name": "LookScopes",
+			"Type": "Editor",
+			"LoadingPhase": "PostConfigInit"
+		}
+	]
+}

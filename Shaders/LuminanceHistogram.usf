@@ -1,0 +1,90 @@
+// Copyright KuoYu. All Rights Reserved.
+// LuminanceHistogram.usf - 亮度直方图 Compute Shader
+//
+// 核心思路：
+// 1. 每个线程组处理一块 Tile，先在 groupshared 内存中累加
+// 2. 最后原子写入全局 UAV Buffer
+// 3. CPU 侧只需回读 256 个 uint，即可得到完整直方图
+
+#include "/Engine/Private/Common.ush"
+
+// ============================================================
+// 参数
+// ============================================================
+
+// 输入场景纹理（SceneCapture2D 的 RenderTarget）
+Texture2D InputTexture;
+SamplerState InputSampler;
+
+// 输出直方图 Buffer：256 个 uint，每个 bin 对应一个亮度区间
+RWBuffer<uint> HistogramOutput;
+
+// 纹理尺寸
+uint2 TextureSize;
+
+// 亮度权重（默认 ITU-R BT.709: 0.2126, 0.7152, 0.0722）
+float3 LuminanceWeights;
+
+// ============================================================
+// 常量
+// ============================================================
+
+#define HISTOGRAM_BIN_COUNT 256
+#define THREADGROUP_SIZE_X 16
+#define THREADGROUP_SIZE_Y 16
+
+// ============================================================
+// Groupshared 内存 - 每个线程组一份本地直方图
+// ============================================================
+
+groupshared uint SharedHistogram[HISTOGRAM_BIN_COUNT];
+
+// ============================================================
+// 主 Compute Shader
+// ============================================================
+
+[numthreads(THREADGROUP_SIZE_X, THREADGROUP_SIZE_Y, 1)]
+void MainCS(
+	uint3 GroupId : SV_GroupID,
+	uint3 DispatchThreadId : SV_DispatchThreadID,
+	uint3 GroupThreadId : SV_GroupThreadID,
+	uint GroupIndex : SV_GroupIndex)
+{
+	// --- 第一步：清零 groupshared 直方图 ---
+	// 每个线程组有 16*16=256 个线程，刚好每个线程清一个 bin
+	if (GroupIndex < HISTOGRAM_BIN_COUNT)
+	{
+		SharedHistogram[GroupIndex] = 0;
+	}
+
+	GroupMemoryBarrierWithGroupSync();
+
+	// --- 第二步：采样并累加到本地直方图 ---
+	uint2 TexelPos = DispatchThreadId.xy;
+
+	if (TexelPos.x < TextureSize.x && TexelPos.y < TextureSize.y)
+	{
+		// 直接 Load 纹理像素（无需插值）
+		float2 UV = (float2(TexelPos) + 0.5f) / float2(TextureSize);
+		float4 Color = InputTexture.SampleLevel(InputSampler, UV, 0);
+
+		// 计算亮度（ITU-R BT.709 加权）
+		float Luminance = dot(Color.rgb, LuminanceWeights);
+
+		// 映射到 [0, 255] 的 bin 索引
+		// 使用 saturate 确保在 [0,1] 范围内（HDR 值会被 clamp）
+		uint BinIndex = (uint)(saturate(Luminance) * 255.0f);
+		BinIndex = min(BinIndex, 255u);
+
+		// 原子累加
+		InterlockedAdd(SharedHistogram[BinIndex], 1u);
+	}
+
+	GroupMemoryBarrierWithGroupSync();
+
+	// --- 第三步：将本地直方图写入全局 UAV ---
+	if (GroupIndex < HISTOGRAM_BIN_COUNT)
+	{
+		InterlockedAdd(HistogramOutput[GroupIndex], SharedHistogram[GroupIndex]);
+	}
+}

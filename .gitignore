@@ -1,0 +1,9 @@
+# 构建产物
+Binaries/
+Intermediate/
+
+# Obsidian 编辑器配置
+.obsidian/
+
+# 临时文件
+*.log
