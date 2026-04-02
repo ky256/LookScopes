@@ -1,2 +1,0 @@
-C:/Program Files/Common Files/OFX/Plugins/NDIReceiverPlugin.ofx.bundle/Contents/Win64/NDIReceiverPlugin.ofx
-C:/Program Files/Common Files/OFX/Plugins/NDIReceiverPlugin.ofx.bundle/Contents/Win64/Processing.NDI.Lib.x64.dll
