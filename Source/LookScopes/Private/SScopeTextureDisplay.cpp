@@ -6,8 +6,6 @@
 #include "Rendering/DrawElements.h"
 #include "Styling/AppStyle.h"
 #include "TextureResource.h"
-#include "Misc/FileHelper.h"
-#include "HAL/FileManager.h"
 
 #define LOCTEXT_NAMESPACE "SScopeTextureDisplay"
 
@@ -21,88 +19,6 @@ void SScopeTextureDisplay::Construct(const FArguments& InArgs)
 	TextureHeight = FMath::Max(InArgs._TextureHeight, 64);
 
 	InitializeTexture(TextureWidth, TextureHeight);
-
-	// ===== 调试：从 BMP 文件加载测试纹理，验证捕获内容和显示链路 =====
-	{
-const FString BmpPath = FPaths::ProjectSavedDir() / TEXT("LookScopes");
-		// 查找目录下最新的 BMP 文件
-		TArray<FString> BmpFiles;
-		IFileManager::Get().FindFiles(BmpFiles, *(BmpPath / TEXT("*.bmp")), true, false);
-
-		if (BmpFiles.Num() > 0)
-		{
-			// 使用最后一个文件（最新的）
-			const FString FullPath = BmpPath / BmpFiles.Last();
-			TArray<uint8> FileData;
-			if (FFileHelper::LoadFileToArray(FileData, *FullPath))
-			{
-				// 解析 BMP 文件头
-				if (FileData.Num() > 54)
-				{
-					// BMP 文件头：偏移 18 = 宽度(4字节), 偏移 22 = 高度(4字节), 偏移 10 = 像素数据偏移(4字节)
-					int32 BmpWidth = *(int32*)(FileData.GetData() + 18);
-					int32 BmpHeight = *(int32*)(FileData.GetData() + 22);
-					uint32 PixelOffset = *(uint32*)(FileData.GetData() + 10);
-
-					UE_LOG(LogTemp, Warning, TEXT("SScopeTextureDisplay: 加载 BMP 文件: %s (%dx%d, 像素偏移=%d)"),
-						*FullPath, BmpWidth, BmpHeight, PixelOffset);
-
-					if (BmpWidth > 0 && BmpHeight > 0)
-					{
-						// 重建纹理以匹配 BMP 尺寸
-						if (BmpWidth != TextureWidth || BmpHeight != TextureHeight)
-						{
-							if (DisplayTexture)
-							{
-								TextureBrush.SetResourceObject(nullptr);
-								DisplayTexture->RemoveFromRoot();
-								DisplayTexture = nullptr;
-							}
-							InitializeTexture(BmpWidth, BmpHeight);
-						}
-
-						const int32 NumPixels = TextureWidth * TextureHeight;
-						PixelBuffer.SetNum(NumPixels);
-
-						// BMP 像素数据是 BGR 格式，从底部到顶部存储
-						// 每行可能有填充字节（对齐到 4 字节）
-						const int32 RowStride = ((BmpWidth * 3 + 3) / 4) * 4;
-						const uint8* PixelData = FileData.GetData() + PixelOffset;
-
-						for (int32 y = 0; y < BmpHeight; ++y)
-						{
-							// BMP 是底部到顶部，翻转 Y
-							const int32 SrcY = BmpHeight - 1 - y;
-							const uint8* SrcRow = PixelData + SrcY * RowStride;
-
-							for (int32 x = 0; x < BmpWidth; ++x)
-							{
-								uint8 B = SrcRow[x * 3 + 0];
-								uint8 G = SrcRow[x * 3 + 1];
-								uint8 R = SrcRow[x * 3 + 2];
-								PixelBuffer[y * TextureWidth + x] = FColor(R, G, B, 255);
-							}
-						}
-
-						bHasValidData = true;
-						FlushPixelsToTexture();
-
-						UE_LOG(LogTemp, Warning, TEXT("SScopeTextureDisplay: BMP 纹理已加载并显示 (%dx%d)"),
-							TextureWidth, TextureHeight);
-					}
-				}
-			}
-			else
-			{
-				UE_LOG(LogTemp, Warning, TEXT("SScopeTextureDisplay: 无法读取 BMP 文件: %s"), *FullPath);
-			}
-		}
-		else
-		{
-			UE_LOG(LogTemp, Warning, TEXT("SScopeTextureDisplay: 未找到 BMP 文件，目录: %s"), *BmpPath);
-		}
-	}
-	// ===== 调试结束 =====
 }
 
 SScopeTextureDisplay::~SScopeTextureDisplay()
@@ -150,8 +66,6 @@ void SScopeTextureDisplay::SetRenderTarget(UTextureRenderTarget2D* InRT)
 	TextureBrush.DrawAs = ESlateBrushDrawType::Image;
 	TextureBrush.Tiling = ESlateBrushTileType::NoTile;
 
-	bHasValidData = true;
-
 	UE_LOG(LogTemp, Log, TEXT("SScopeTextureDisplay: 切换到 GPU 模式 (RT: %dx%d)"),
 		BoundRenderTarget->SizeX, BoundRenderTarget->SizeY);
 }
@@ -182,8 +96,6 @@ void SScopeTextureDisplay::SetTexture2D(UTexture2D* InTexture)
 	// 更新内部尺寸用于宽高比计算
 	TextureWidth = BoundTexture2D->GetSizeX();
 	TextureHeight = BoundTexture2D->GetSizeY();
-
-	bHasValidData = true;
 
 	// 诊断日志：检查 RHI 资源状态
 	FTextureResource* TexResource = BoundTexture2D->GetResource();
@@ -636,18 +548,29 @@ int32 SScopeTextureDisplay::OnPaint(
 	}
 	else
 	{
-		// 无数据时显示提示文字
-		const FSlateFontInfo Font = FCoreStyle::GetDefaultFontStyle("Regular", 11);
-		FSlateDrawElement::MakeText(
-			OutDrawElements, LayerId,
-			AllottedGeometry.ToPaintGeometry(
-				FVector2D(LocalSize.X, 20.0f),
-				FSlateLayoutTransform(FVector2D(0.0f, LocalSize.Y * 0.5f - 10.0f))
-			),
-			LOCTEXT("NoData", "等待分析数据..."),
-			Font, ESlateDrawEffect::None,
-			FLinearColor(0.4f, 0.4f, 0.4f, 1.0f)
-		);
+		// 无数据时：绘制简约格子背景
+		const float GridSpacing = 40.0f;
+		const FLinearColor GridColor(0.055f, 0.055f, 0.055f, 1.0f);
+
+		for (float x = GridSpacing; x < LocalSize.X; x += GridSpacing)
+		{
+			TArray<FVector2D> LinePoints;
+			LinePoints.Add(FVector2D(x, 0.0f));
+			LinePoints.Add(FVector2D(x, LocalSize.Y));
+			FSlateDrawElement::MakeLines(
+				OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(),
+				LinePoints, ESlateDrawEffect::None, GridColor, true, 1.0f);
+		}
+
+		for (float y = GridSpacing; y < LocalSize.Y; y += GridSpacing)
+		{
+			TArray<FVector2D> LinePoints;
+			LinePoints.Add(FVector2D(0.0f, y));
+			LinePoints.Add(FVector2D(LocalSize.X, y));
+			FSlateDrawElement::MakeLines(
+				OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(),
+				LinePoints, ESlateDrawEffect::None, GridColor, true, 1.0f);
+		}
 	}
 	LayerId++;
 

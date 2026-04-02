@@ -118,4 +118,10 @@ private:
 
 	/** 状态文字 */
 	TSharedPtr<STextBlock> StatusText;
+
+	// --- 面板折叠状态 ---
+
+	bool bPreviewVisible = true;
+	bool bScopesVisible = true;
+	bool bGalleryVisible = true;
 };

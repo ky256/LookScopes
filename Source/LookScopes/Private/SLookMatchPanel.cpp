@@ -43,7 +43,22 @@ void SLookMatchPanel::Construct(const FArguments& InArgs)
 	[
 		SNew(SVerticalBox)
 
-		// === 顶部工具栏 ===
+		// === 标题栏 ===
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			SNew(SBorder)
+			.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
+			.Padding(FMargin(12.0f, 5.0f))
+			[
+				SNew(STextBlock)
+				.Text(LOCTEXT("PanelTitle", "LOOK MATCH & SCOPES"))
+				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
+				.ColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.55f, 0.55f)))
+			]
+		]
+
+		// === 功能工具栏 ===
 		+ SVerticalBox::Slot()
 		.AutoHeight()
 		[
@@ -61,34 +76,32 @@ void SLookMatchPanel::Construct(const FArguments& InArgs)
 		+ SVerticalBox::Slot()
 		.FillHeight(1.0f)
 		[
-			SNew(SSplitter)
-			.Orientation(Orient_Horizontal)
-			.PhysicalSplitterHandleSize(3.0f)
-			.HitDetectionSplitterHandleSize(6.0f)
+			SNew(SHorizontalBox)
 
-			// 左侧：划像视口占位区（约 60% 宽度）
-			+ SSplitter::Slot()
-			.Value(0.6f)
+			// 左侧：预览区（含可折叠 section header）
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
 			[
 				BuildViewportPlaceholder()
 			]
 
-			// 右侧：示波器数据区（约 40% 宽度）
-			+ SSplitter::Slot()
-			.Value(0.4f)
+			// 分隔线
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				SNew(SSeparator)
+				.Orientation(Orient_Vertical)
+			]
+
+			// 右侧：示波器区（含可折叠 section header）
+			+ SHorizontalBox::Slot()
+			.FillWidth(0.67f)
 			[
 				BuildScopesArea()
 			]
 		]
 
-		// === 分隔线 ===
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		[
-			SNew(SSeparator)
-		]
-
-		// === 底部画廊占位区 ===
+		// === 底部画廊区（含可折叠 section header） ===
 		+ SVerticalBox::Slot()
 		.AutoHeight()
 		[
@@ -269,18 +282,6 @@ TSharedRef<SWidget> SLookMatchPanel::BuildToolbar()
 		.Padding(FMargin(8.0f, 4.0f))
 		[
 			SNew(SHorizontalBox)
-
-			// 标题
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.VAlign(VAlign_Center)
-			.Padding(0.0f, 0.0f, 16.0f, 0.0f)
-			[
-				SNew(STextBlock)
-				.Text(LOCTEXT("PanelTitle", "LOOK MATCH & SCOPES"))
-				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 11))
-				.ColorAndOpacity(FSlateColor(FLinearColor(0.8f, 0.8f, 0.8f)))
-			]
 
 			// 实时分析 开关按钮
 			+ SHorizontalBox::Slot()
@@ -486,6 +487,7 @@ TSharedRef<SWidget> SLookMatchPanel::BuildToolbar()
 					.ColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f)))
 				]
 			]
+
 		];
 }
 
@@ -497,49 +499,84 @@ TSharedRef<SWidget> SLookMatchPanel::BuildViewportPlaceholder()
 {
 	return SNew(SVerticalBox)
 
-		// 顶部标题栏
+		// Section header: INPUT PREVIEW（可点击折叠）
 		+ SVerticalBox::Slot()
 		.AutoHeight()
 		[
 			SNew(SBorder)
 			.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
-			.Padding(FMargin(8.0f, 3.0f))
+			.Padding(0)
 			[
-				SNew(SHorizontalBox)
-
-				+ SHorizontalBox::Slot()
-				.AutoWidth()
+				SNew(SButton)
+				.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+				.ContentPadding(FMargin(8.0f, 5.0f))
+				.OnClicked_Lambda([this]()
+				{
+					bPreviewVisible = !bPreviewVisible;
+					Invalidate(EInvalidateWidgetReason::Layout);
+					return FReply::Handled();
+				})
 				[
-					SNew(STextBlock)
-					.Text(LOCTEXT("InputPreviewTitle", "INPUT PREVIEW"))
-					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-					.ColorAndOpacity(FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f)))
-				]
+					SNew(SHorizontalBox)
 
-				+ SHorizontalBox::Slot()
-				.FillWidth(1.0f)
-				[
-					SNew(SSpacer)
-				]
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+						.Text(LOCTEXT("InputPreviewTitle", "INPUT PREVIEW"))
+						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
+						.ColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.55f, 0.55f)))
+					]
 
-				+ SHorizontalBox::Slot()
-				.AutoWidth()
-				[
-					SNew(STextBlock)
-					.Text(LOCTEXT("InputPreviewSource", "Viewport Capture"))
-					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-					.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.4f, 0.4f)))
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					.Padding(8.0f, 0.0f, 0.0f, 0.0f)
+					[
+						SNew(STextBlock)
+						.Text(LOCTEXT("InputPreviewSource", "Viewport Capture"))
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+						.ColorAndOpacity(FSlateColor(FLinearColor(0.35f, 0.35f, 0.35f)))
+					]
+
+					+ SHorizontalBox::Slot()
+					.FillWidth(1.0f)
+					[
+						SNew(SSpacer)
+					]
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+						.Text_Lambda([this]() -> FText
+						{
+							return FText::FromString(bPreviewVisible ? TEXT("\x25BC") : TEXT("\x25B6"));
+						})
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+						.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.4f, 0.4f)))
+					]
 				]
 			]
 		]
 
-		// 输入图像预览纹理显示
+		// 输入图像预览纹理显示（可折叠）
 		+ SVerticalBox::Slot()
 		.FillHeight(1.0f)
 		[
-			SAssignNew(InputPreviewDisplay, SScopeTextureDisplay)
-			.TextureWidth(256)
-			.TextureHeight(256)
+			SNew(SBox)
+			.Visibility_Lambda([this]()
+			{
+				return bPreviewVisible ? EVisibility::Visible : EVisibility::Collapsed;
+			})
+			.Padding(4.0f)
+			[
+				SAssignNew(InputPreviewDisplay, SScopeTextureDisplay)
+				.TextureWidth(256)
+				.TextureHeight(256)
+			]
 		];
 }
 
@@ -551,30 +588,34 @@ TSharedRef<SWidget> SLookMatchPanel::BuildScopesArea()
 {
 	return SNew(SVerticalBox)
 
-		// 波形图
+		// Section header: SCOPES（可点击折叠）
 		+ SVerticalBox::Slot()
-		.FillHeight(0.5f)
-		.Padding(4.0f)
+		.AutoHeight()
 		[
-			SNew(SVerticalBox)
-
-			// 波形图标题栏
-			+ SVerticalBox::Slot()
-			.AutoHeight()
+			SNew(SBorder)
+			.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
+			.Padding(0)
 			[
-				SNew(SBorder)
-				.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
-				.Padding(FMargin(8.0f, 3.0f))
+				SNew(SButton)
+				.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+				.ContentPadding(FMargin(8.0f, 5.0f))
+				.OnClicked_Lambda([this]()
+				{
+					bScopesVisible = !bScopesVisible;
+					Invalidate(EInvalidateWidgetReason::Layout);
+					return FReply::Handled();
+				})
 				[
 					SNew(SHorizontalBox)
 
 					+ SHorizontalBox::Slot()
 					.AutoWidth()
+					.VAlign(VAlign_Center)
 					[
 						SNew(STextBlock)
-						.Text(LOCTEXT("WaveformTitle", "WAVEFORM (Luma)"))
-						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-						.ColorAndOpacity(FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f)))
+						.Text(LOCTEXT("ScopesHeader", "SCOPES"))
+						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
+						.ColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.55f, 0.55f)))
 					]
 
 					+ SHorizontalBox::Slot()
@@ -585,75 +626,133 @@ TSharedRef<SWidget> SLookMatchPanel::BuildScopesArea()
 
 					+ SHorizontalBox::Slot()
 					.AutoWidth()
+					.VAlign(VAlign_Center)
 					[
 						SNew(STextBlock)
-						.Text(LOCTEXT("WaveformUnit", "IRE"))
+						.Text_Lambda([this]() -> FText
+						{
+							return FText::FromString(bScopesVisible ? TEXT("\x25BC") : TEXT("\x25C0"));
+						})
 						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 						.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.4f, 0.4f)))
 					]
 				]
-			]
-
-			// 波形图纹理显示
-			+ SVerticalBox::Slot()
-			.FillHeight(1.0f)
-			[
-				SAssignNew(WaveformDisplay, SScopeTextureDisplay)
-				.TextureWidth(512)
-				.TextureHeight(256)
 			]
 		]
 
-		// 直方图
+		// Scopes 内容（可折叠）
 		+ SVerticalBox::Slot()
-		.FillHeight(0.5f)
-		.Padding(4.0f)
+		.FillHeight(1.0f)
 		[
-			SNew(SVerticalBox)
-
-			// 直方图标题栏
-			+ SVerticalBox::Slot()
-			.AutoHeight()
+			SNew(SBox)
+			.Visibility_Lambda([this]()
+			{
+				return bScopesVisible ? EVisibility::Visible : EVisibility::Collapsed;
+			})
 			[
-				SNew(SBorder)
-				.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
-				.Padding(FMargin(8.0f, 3.0f))
+				SNew(SVerticalBox)
+
+				// 波形图
+				+ SVerticalBox::Slot()
+				.FillHeight(0.5f)
+				.Padding(4.0f)
 				[
-					SNew(SHorizontalBox)
+					SNew(SVerticalBox)
 
-					+ SHorizontalBox::Slot()
-					.AutoWidth()
+					+ SVerticalBox::Slot()
+					.AutoHeight()
 					[
-						SNew(STextBlock)
-						.Text(LOCTEXT("HistogramTitle", "HISTOGRAM"))
-						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-						.ColorAndOpacity(FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f)))
+						SNew(SBorder)
+						.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
+						.Padding(FMargin(8.0f, 3.0f))
+						[
+							SNew(SHorizontalBox)
+
+							+ SHorizontalBox::Slot()
+							.AutoWidth()
+							[
+								SNew(STextBlock)
+								.Text(LOCTEXT("WaveformTitle", "WAVEFORM (Luma)"))
+								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+								.ColorAndOpacity(FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f)))
+							]
+
+							+ SHorizontalBox::Slot()
+							.FillWidth(1.0f)
+							[
+								SNew(SSpacer)
+							]
+
+							+ SHorizontalBox::Slot()
+							.AutoWidth()
+							[
+								SNew(STextBlock)
+								.Text(LOCTEXT("WaveformUnit", "IRE"))
+								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+								.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.4f, 0.4f)))
+							]
+						]
 					]
 
-					+ SHorizontalBox::Slot()
-					.FillWidth(1.0f)
+					+ SVerticalBox::Slot()
+					.FillHeight(1.0f)
 					[
-						SNew(SSpacer)
-					]
-
-					+ SHorizontalBox::Slot()
-					.AutoWidth()
-					[
-						SNew(STextBlock)
-						.Text(LOCTEXT("HistogramUnit", "Luma"))
-						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-						.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.4f, 0.4f)))
+						SAssignNew(WaveformDisplay, SScopeTextureDisplay)
+						.TextureWidth(512)
+						.TextureHeight(256)
 					]
 				]
-			]
 
-			// 直方图纹理显示
-			+ SVerticalBox::Slot()
-			.FillHeight(1.0f)
-			[
-				SAssignNew(HistogramDisplay, SScopeTextureDisplay)
-				.TextureWidth(512)
-				.TextureHeight(256)
+				// 直方图
+				+ SVerticalBox::Slot()
+				.FillHeight(0.5f)
+				.Padding(4.0f)
+				[
+					SNew(SVerticalBox)
+
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					[
+						SNew(SBorder)
+						.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
+						.Padding(FMargin(8.0f, 3.0f))
+						[
+							SNew(SHorizontalBox)
+
+							+ SHorizontalBox::Slot()
+							.AutoWidth()
+							[
+								SNew(STextBlock)
+								.Text(LOCTEXT("HistogramTitle", "HISTOGRAM"))
+								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+								.ColorAndOpacity(FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f)))
+							]
+
+							+ SHorizontalBox::Slot()
+							.FillWidth(1.0f)
+							[
+								SNew(SSpacer)
+							]
+
+							+ SHorizontalBox::Slot()
+							.AutoWidth()
+							[
+								SNew(STextBlock)
+								.Text(LOCTEXT("HistogramUnit", "Luma"))
+								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+								.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.4f, 0.4f)))
+							]
+						]
+					]
+
+					+ SVerticalBox::Slot()
+					.FillHeight(1.0f)
+					[
+						SAssignNew(HistogramDisplay, SScopeTextureDisplay)
+						.TextureWidth(512)
+						.TextureHeight(256)
+					]
+				]
 			]
 		];
 }
@@ -664,78 +763,138 @@ TSharedRef<SWidget> SLookMatchPanel::BuildScopesArea()
 
 TSharedRef<SWidget> SLookMatchPanel::BuildGalleryPlaceholder()
 {
-	return SNew(SBox)
-		.HeightOverride(80.0f)
+	return SNew(SVerticalBox)
+
+		// Section header: GALLERY（可点击折叠）
+		+ SVerticalBox::Slot()
+		.AutoHeight()
 		[
 			SNew(SBorder)
 			.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
-			.Padding(FMargin(12.0f, 4.0f))
+			.Padding(0)
 			[
-				SNew(SHorizontalBox)
-
-				// 占位缩略图示例
-				+ SHorizontalBox::Slot()
-				.AutoWidth()
-				.VAlign(VAlign_Center)
-				.Padding(0.0f, 0.0f, 8.0f, 0.0f)
+				SNew(SButton)
+				.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+				.ContentPadding(FMargin(8.0f, 4.0f))
+				.OnClicked_Lambda([this]()
+				{
+					bGalleryVisible = !bGalleryVisible;
+					Invalidate(EInvalidateWidgetReason::Layout);
+					return FReply::Handled();
+				})
 				[
-					SNew(SBox)
-					.WidthOverride(100.0f)
-					.HeightOverride(56.0f)
+					SNew(SHorizontalBox)
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
 					[
-						SNew(SBorder)
-						.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-						.BorderBackgroundColor(FLinearColor(0.15f, 0.15f, 0.15f, 1.0f))
-						.HAlign(HAlign_Center)
-						.VAlign(VAlign_Center)
-						[
-							SNew(STextBlock)
-							.Text(LOCTEXT("GalleryItem1", "Ref_01"))
-							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
-							.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.4f, 0.4f)))
-						]
+						SNew(STextBlock)
+						.Text(LOCTEXT("GalleryHeader", "GALLERY"))
+						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
+						.ColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.55f, 0.55f)))
+					]
+
+					+ SHorizontalBox::Slot()
+					.FillWidth(1.0f)
+					[
+						SNew(SSpacer)
+					]
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+						.Text_Lambda([this]() -> FText
+						{
+							return FText::FromString(bGalleryVisible ? TEXT("\x25BC") : TEXT("\x25B2"));
+						})
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+						.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.4f, 0.4f)))
 					]
 				]
+			]
+		]
 
-				+ SHorizontalBox::Slot()
-				.AutoWidth()
-				.VAlign(VAlign_Center)
-				.Padding(0.0f, 0.0f, 8.0f, 0.0f)
+		// Gallery 内容（可折叠）
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			SNew(SBox)
+			.Visibility_Lambda([this]()
+			{
+				return bGalleryVisible ? EVisibility::Visible : EVisibility::Collapsed;
+			})
+			.HeightOverride(56.0f)
+			[
+				SNew(SBorder)
+				.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
+				.Padding(FMargin(12.0f, 4.0f))
 				[
-					SNew(SBox)
-					.WidthOverride(100.0f)
-					.HeightOverride(56.0f)
+					SNew(SHorizontalBox)
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					.Padding(0.0f, 0.0f, 8.0f, 0.0f)
 					[
-						SNew(SBorder)
-						.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-						.BorderBackgroundColor(FLinearColor(0.12f, 0.12f, 0.12f, 1.0f))
-						.HAlign(HAlign_Center)
-						.VAlign(VAlign_Center)
+						SNew(SBox)
+						.WidthOverride(80.0f)
+						.HeightOverride(40.0f)
 						[
-							SNew(STextBlock)
-							.Text(LOCTEXT("GalleryItem2", "Grab_001"))
-							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
-							.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.4f, 0.4f)))
+							SNew(SBorder)
+							.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+							.BorderBackgroundColor(FLinearColor(0.15f, 0.15f, 0.15f, 1.0f))
+							.HAlign(HAlign_Center)
+							.VAlign(VAlign_Center)
+							[
+								SNew(STextBlock)
+								.Text(LOCTEXT("GalleryItem1", "Ref_01"))
+								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+								.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.4f, 0.4f)))
+							]
 						]
 					]
-				]
 
-				// 弹性空间
-				+ SHorizontalBox::Slot()
-				.FillWidth(1.0f)
-				[
-					SNew(SSpacer)
-				]
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					.Padding(0.0f, 0.0f, 8.0f, 0.0f)
+					[
+						SNew(SBox)
+						.WidthOverride(80.0f)
+						.HeightOverride(40.0f)
+						[
+							SNew(SBorder)
+							.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+							.BorderBackgroundColor(FLinearColor(0.12f, 0.12f, 0.12f, 1.0f))
+							.HAlign(HAlign_Center)
+							.VAlign(VAlign_Center)
+							[
+								SNew(STextBlock)
+								.Text(LOCTEXT("GalleryItem2", "Grab_001"))
+								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+								.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.4f, 0.4f)))
+							]
+						]
+					]
 
-				// 提示文字
-				+ SHorizontalBox::Slot()
-				.AutoWidth()
-				.VAlign(VAlign_Center)
-				[
-					SNew(STextBlock)
-					.Text(LOCTEXT("GalleryHint", "参考画廊 — Phase 3 实现"))
-					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-					.ColorAndOpacity(FSlateColor(FLinearColor(0.35f, 0.35f, 0.35f)))
+					+ SHorizontalBox::Slot()
+					.FillWidth(1.0f)
+					[
+						SNew(SSpacer)
+					]
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+						.Text(LOCTEXT("GalleryHint", "参考画廊 — Phase 3"))
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+						.ColorAndOpacity(FSlateColor(FLinearColor(0.35f, 0.35f, 0.35f)))
+					]
 				]
 			]
 		];
