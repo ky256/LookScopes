@@ -14,6 +14,8 @@
 #include "WorkspaceMenuStructureModule.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Application/IInputProcessor.h"
+#include "Slate/SceneViewport.h"
+#include "LevelEditorViewport.h"
 
 #define LOCTEXT_NAMESPACE "LookScopesSubsystem"
 
@@ -82,7 +84,11 @@ void ULookScopesSubsystem::Deinitialize()
 
 	FLookScopesCommands::Unregister();
 
-	// 停止 NDI 推流
+	// 清除视口固定尺寸 & 停止 NDI 推流
+	if (GCurrentLevelEditingViewportClient && GCurrentLevelEditingViewportClient->Viewport)
+	{
+		static_cast<FSceneViewport*>(GCurrentLevelEditingViewportClient->Viewport)->SetFixedViewportSize(0, 0);
+	}
 	if (ViewportStreamer.IsValid())
 	{
 		ViewportStreamer->StopStreaming();
@@ -217,7 +223,32 @@ void ULookScopesSubsystem::StartNDIStream(const FString& SourceName)
 
 	if (!ViewportStreamer->IsStreaming())
 	{
-		ViewportStreamer->StartStreaming(SourceName);
+		ViewportStreamer->StartStreaming(SourceName, StreamResolution.X, StreamResolution.Y);
+	}
+}
+
+void ULookScopesSubsystem::SetStreamResolution(FIntPoint InRes)
+{
+	StreamResolution = InRes;
+
+	if (GCurrentLevelEditingViewportClient && GCurrentLevelEditingViewportClient->Viewport)
+	{
+		FSceneViewport* SceneVP = static_cast<FSceneViewport*>(GCurrentLevelEditingViewportClient->Viewport);
+		if (InRes.X > 0 && InRes.Y > 0)
+		{
+			SceneVP->SetFixedViewportSize(InRes.X, InRes.Y);
+		}
+		else
+		{
+			SceneVP->SetFixedViewportSize(0, 0);
+		}
+	}
+
+	if (IsNDIStreaming())
+	{
+		FString Name = ViewportStreamer->GetSourceName();
+		ViewportStreamer->StopStreaming();
+		ViewportStreamer->StartStreaming(Name, StreamResolution.X, StreamResolution.Y);
 	}
 }
 

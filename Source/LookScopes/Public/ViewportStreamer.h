@@ -36,6 +36,8 @@ private:
 	FTSTicker::FDelegateHandle DebounceTickHandle;
 
 	FString CurrentSourceName;
+	int32 SavedWidth = 0;
+	int32 SavedHeight = 0;
 	bool bIsStreaming = false;
 	bool bWantsRestart = false;
 	float DebounceTimer = 0.0f;

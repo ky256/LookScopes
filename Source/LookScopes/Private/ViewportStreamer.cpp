@@ -28,6 +28,9 @@ bool FViewportStreamer::StartStreaming(const FString& SourceName, int32 Width, i
 {
 	UE_LOG(LogViewportStreamer, Log, TEXT("[StartStreaming] called, SourceName=%s, bIsStreaming=%d"), *SourceName, bIsStreaming);
 
+	SavedWidth = Width;
+	SavedHeight = Height;
+
 	if (bIsStreaming)
 	{
 		UE_LOG(LogViewportStreamer, Warning, TEXT("[StartStreaming] Already streaming, skipping"));
@@ -78,6 +81,10 @@ bool FViewportStreamer::StartStreaming(const FString& SourceName, int32 Width, i
 	FMediaCaptureOptions Opts;
 	Opts.bAutoRestartOnSourceSizeChange = true;
 	Opts.OverrunAction = EMediaCaptureOverrunAction::Skip;
+	if (Width > 0 && Height > 0)
+	{
+		Opts.ResizeMethod = EMediaCaptureResizeMethod::ResizeInRenderPass;
+	}
 
 	UE_LOG(LogViewportStreamer, Log, TEXT("[StartStreaming] Calling CaptureActiveSceneViewport..."));
 	if (!MediaCapture->CaptureActiveSceneViewport(Opts))
@@ -183,8 +190,9 @@ bool FViewportStreamer::TickDebounce(float DeltaTime)
 	MediaOutput = nullptr;
 	bIsStreaming = false;
 
-	UE_LOG(LogViewportStreamer, Log, TEXT("[TickDebounce] Old capture cleaned up, calling StartStreaming"));
-	StartStreaming(SavedName);
+	UE_LOG(LogViewportStreamer, Log, TEXT("[TickDebounce] Old capture cleaned up, calling StartStreaming (res=%dx%d)"),
+		SavedWidth, SavedHeight);
+	StartStreaming(SavedName, SavedWidth, SavedHeight);
 
 	return false; // stop ticking
 }

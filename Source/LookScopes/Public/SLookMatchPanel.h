@@ -9,6 +9,7 @@
 
 class FScopeSessionManager;
 class SScopeTextureDisplay;
+class STextComboBox;
 
 /**
  * SLookMatchPanel - Look Match & Scopes 主面板
@@ -124,4 +125,10 @@ private:
 	bool bPreviewVisible = true;
 	bool bScopesVisible = true;
 	bool bGalleryVisible = true;
+
+	// --- 分辨率预设 ---
+
+	TArray<TSharedPtr<FString>> ResolutionOptionStrings;
+	TArray<FIntPoint> ResolutionOptionValues;
+	TSharedPtr<STextComboBox> ResolutionComboBox;
 };

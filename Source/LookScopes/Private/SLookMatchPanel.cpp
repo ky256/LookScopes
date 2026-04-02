@@ -18,6 +18,7 @@
 #include "Widgets/Layout/SSplitter.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Styling/AppStyle.h"
+#include "Widgets/Input/STextComboBox.h"
 #include "LookScopesSubsystem.h"
 #include "Editor.h"
 
@@ -30,6 +31,18 @@
 void SLookMatchPanel::Construct(const FArguments& InArgs)
 {
 	SessionManagerWeak = InArgs._SessionManager;
+
+	// 初始化分辨率预设
+	auto AddPreset = [this](const FString& Label, FIntPoint Res)
+	{
+		ResolutionOptionStrings.Add(MakeShared<FString>(Label));
+		ResolutionOptionValues.Add(Res);
+	};
+	AddPreset(TEXT("Auto"), FIntPoint::ZeroValue);
+	AddPreset(TEXT("1280 x 720"), FIntPoint(1280, 720));
+	AddPreset(TEXT("1920 x 1080"), FIntPoint(1920, 1080));
+	AddPreset(TEXT("2560 x 1440"), FIntPoint(2560, 1440));
+	AddPreset(TEXT("3840 x 2160"), FIntPoint(3840, 2160));
 
 	// 订阅 SessionManager 的分析完成委托
 	TSharedPtr<FScopeSessionManager> SM = SessionManagerWeak.Pin();
@@ -423,6 +436,61 @@ TSharedRef<SWidget> SLookMatchPanel::BuildToolbar()
 							return LOCTEXT("StartNDI", "NDI Stream");
 						})
 						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+					]
+				]
+			]
+
+			// 分辨率分隔线
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(8.0f, 0.0f)
+			[
+				SNew(SSeparator)
+				.Orientation(Orient_Vertical)
+				.Thickness(1.0f)
+			]
+
+			// 分辨率预设下拉框
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(2.0f, 0.0f)
+			[
+				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(0.0f, 0.0f, 4.0f, 0.0f)
+				[
+					SNew(STextBlock)
+					.Text(LOCTEXT("ResLabel", "Res:"))
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					.ColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f)))
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				[
+					SNew(SBox)
+					.WidthOverride(130.0f)
+					[
+						SAssignNew(ResolutionComboBox, STextComboBox)
+						.OptionsSource(&ResolutionOptionStrings)
+						.InitiallySelectedItem(ResolutionOptionStrings[0])
+						.OnSelectionChanged_Lambda([this](TSharedPtr<FString> NewValue, ESelectInfo::Type SelectInfo)
+						{
+							if (!NewValue.IsValid()) return;
+							int32 Idx = ResolutionOptionStrings.IndexOfByKey(NewValue);
+							if (Idx != INDEX_NONE)
+							{
+								if (auto* Subsystem = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+								{
+									Subsystem->SetStreamResolution(ResolutionOptionValues[Idx]);
+								}
+							}
+						})
 					]
 				]
 			]

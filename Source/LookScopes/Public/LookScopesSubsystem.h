@@ -46,6 +46,10 @@ public:
 	void StopNDIStream();
 	bool IsNDIStreaming() const;
 
+	/** 推流分辨率（0,0 表示跟随视口） */
+	void SetStreamResolution(FIntPoint InRes);
+	FIntPoint GetStreamResolution() const { return StreamResolution; }
+
 	/** 获取推流器 */
 	TSharedPtr<FViewportStreamer> GetViewportStreamer() const { return ViewportStreamer; }
 
@@ -77,6 +81,9 @@ private:
 
 	/** NDI 视口推流器 */
 	TSharedPtr<FViewportStreamer> ViewportStreamer;
+
+	/** 推流输出分辨率（0,0=跟随视口） */
+	FIntPoint StreamResolution = FIntPoint::ZeroValue;
 
 	/** 全局输入处理器（用于快捷键拦截） */
 	TSharedPtr<class IInputProcessor> InputProcessor;
