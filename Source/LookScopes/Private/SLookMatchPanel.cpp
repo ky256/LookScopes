@@ -38,7 +38,7 @@ void SLookMatchPanel::Construct(const FArguments& InArgs)
 		ResolutionOptionStrings.Add(MakeShared<FString>(Label));
 		ResolutionOptionValues.Add(Res);
 	};
-	AddPreset(TEXT("Auto"), FIntPoint::ZeroValue);
+	AddPreset(TEXT("自动"), FIntPoint::ZeroValue);
 	AddPreset(TEXT("1280 x 720"), FIntPoint(1280, 720));
 	AddPreset(TEXT("1920 x 1080"), FIntPoint(1920, 1080));
 	AddPreset(TEXT("2560 x 1440"), FIntPoint(2560, 1440));
@@ -65,7 +65,7 @@ void SLookMatchPanel::Construct(const FArguments& InArgs)
 			.Padding(FMargin(12.0f, 5.0f))
 			[
 				SNew(STextBlock)
-				.Text(LOCTEXT("PanelTitle", "LOOK MATCH & SCOPES"))
+				.Text(LOCTEXT("PanelTitle", "视觉对标 & 示波器"))
 				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
 				.ColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.55f, 0.55f)))
 			]
@@ -431,9 +431,9 @@ TSharedRef<SWidget> SLookMatchPanel::BuildToolbar()
 						{
 							if (auto* Subsystem = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
 								return Subsystem->IsNDIStreaming()
-									? LOCTEXT("StopNDI", "NDI Stop")
-									: LOCTEXT("StartNDI", "NDI Stream");
-							return LOCTEXT("StartNDI", "NDI Stream");
+								? LOCTEXT("StopNDI", "NDI 停止")
+								: LOCTEXT("StartNDI", "NDI 推流");
+						return LOCTEXT("StartNDI", "NDI 推流");
 						})
 						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
 					]
@@ -465,7 +465,7 @@ TSharedRef<SWidget> SLookMatchPanel::BuildToolbar()
 				.Padding(0.0f, 0.0f, 4.0f, 0.0f)
 				[
 					SNew(STextBlock)
-					.Text(LOCTEXT("ResLabel", "Res:"))
+					.Text(LOCTEXT("ResLabel", "分辨率:"))
 					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 					.ColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f)))
 				]
@@ -592,7 +592,7 @@ TSharedRef<SWidget> SLookMatchPanel::BuildViewportPlaceholder()
 					.VAlign(VAlign_Center)
 					[
 						SNew(STextBlock)
-						.Text(LOCTEXT("InputPreviewTitle", "INPUT PREVIEW"))
+						.Text(LOCTEXT("InputPreviewTitle", "输入预览"))
 						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
 						.ColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.55f, 0.55f)))
 					]
@@ -603,7 +603,7 @@ TSharedRef<SWidget> SLookMatchPanel::BuildViewportPlaceholder()
 					.Padding(8.0f, 0.0f, 0.0f, 0.0f)
 					[
 						SNew(STextBlock)
-						.Text(LOCTEXT("InputPreviewSource", "Viewport Capture"))
+						.Text(LOCTEXT("InputPreviewSource", "视口捕获"))
 						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 						.ColorAndOpacity(FSlateColor(FLinearColor(0.35f, 0.35f, 0.35f)))
 					]
@@ -681,7 +681,7 @@ TSharedRef<SWidget> SLookMatchPanel::BuildScopesArea()
 					.VAlign(VAlign_Center)
 					[
 						SNew(STextBlock)
-						.Text(LOCTEXT("ScopesHeader", "SCOPES"))
+						.Text(LOCTEXT("ScopesHeader", "示波器"))
 						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
 						.ColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.55f, 0.55f)))
 					]
@@ -740,7 +740,7 @@ TSharedRef<SWidget> SLookMatchPanel::BuildScopesArea()
 							.AutoWidth()
 							[
 								SNew(STextBlock)
-								.Text(LOCTEXT("WaveformTitle", "WAVEFORM (Luma)"))
+								.Text(LOCTEXT("WaveformTitle", "波形图 (亮度)"))
 								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 								.ColorAndOpacity(FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f)))
 							]
@@ -791,7 +791,7 @@ TSharedRef<SWidget> SLookMatchPanel::BuildScopesArea()
 							.AutoWidth()
 							[
 								SNew(STextBlock)
-								.Text(LOCTEXT("HistogramTitle", "HISTOGRAM"))
+								.Text(LOCTEXT("HistogramTitle", "直方图"))
 								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 								.ColorAndOpacity(FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f)))
 							]
@@ -806,7 +806,7 @@ TSharedRef<SWidget> SLookMatchPanel::BuildScopesArea()
 							.AutoWidth()
 							[
 								SNew(STextBlock)
-								.Text(LOCTEXT("HistogramUnit", "Luma"))
+								.Text(LOCTEXT("HistogramUnit", "亮度"))
 								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 								.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.4f, 0.4f)))
 							]
@@ -858,7 +858,7 @@ TSharedRef<SWidget> SLookMatchPanel::BuildGalleryPlaceholder()
 					.VAlign(VAlign_Center)
 					[
 						SNew(STextBlock)
-						.Text(LOCTEXT("GalleryHeader", "GALLERY"))
+						.Text(LOCTEXT("GalleryHeader", "参考画廊"))
 						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
 						.ColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.55f, 0.55f)))
 					]
@@ -959,7 +959,7 @@ TSharedRef<SWidget> SLookMatchPanel::BuildGalleryPlaceholder()
 					.VAlign(VAlign_Center)
 					[
 						SNew(STextBlock)
-						.Text(LOCTEXT("GalleryHint", "参考画廊 — Phase 3"))
+						.Text(LOCTEXT("GalleryHint", "参考画廊 — 第三阶段"))
 						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 						.ColorAndOpacity(FSlateColor(FLinearColor(0.35f, 0.35f, 0.35f)))
 					]

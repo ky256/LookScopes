@@ -149,7 +149,7 @@ void ULookScopesSubsystem::RegisterTabSpawner()
 	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(
 		ScopeTabId,
 		FOnSpawnTab::CreateUObject(this, &ULookScopesSubsystem::SpawnScopeTab))
-		.SetDisplayName(LOCTEXT("TabTitle", "Look Scopes"))
+		.SetDisplayName(LOCTEXT("TabTitle", "视觉对标"))
 		.SetTooltipText(LOCTEXT("TabTooltip", "视口分析与视觉对标工具 - 波形图、直方图、Look Match"))
 		.SetGroup(WorkspaceMenu::GetMenuStructure().GetToolsCategory())
 		.SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), "LevelEditor.Tabs.Viewports"));
@@ -173,12 +173,12 @@ void ULookScopesSubsystem::RegisterMenus()
 	if (ToolsMenu)
 	{
 		FToolMenuSection& Section = ToolsMenu->FindOrAddSection("LookScopes");
-		Section.Label = LOCTEXT("MenuSectionLabel", "Look Scopes");
+		Section.Label = LOCTEXT("MenuSectionLabel", "视觉对标");
 
 		Section.AddMenuEntry(
 			"OpenLookScopes",
-			LOCTEXT("MenuEntryLabel", "Look Scopes 面板"),
-			LOCTEXT("MenuEntryTooltip", "打开 Look Scopes 面板 (Ctrl+Shift+L)"),
+			LOCTEXT("MenuEntryLabel", "视觉对标面板"),
+			LOCTEXT("MenuEntryTooltip", "打开视觉对标面板 (Ctrl+Shift+L)"),
 			FSlateIcon(),
 			FUIAction(FExecuteAction::CreateUObject(this, &ULookScopesSubsystem::OpenScopePanel))
 		);
@@ -274,7 +274,7 @@ TSharedRef<SDockTab> ULookScopesSubsystem::SpawnScopeTab(const FSpawnTabArgs& Ar
 
 	return SNew(SDockTab)
 		.TabRole(ETabRole::NomadTab)
-		.Label(LOCTEXT("TabLabel", "Look Match & Scopes"))
+		.Label(LOCTEXT("TabLabel", "视觉对标 & 示波器"))
 		[
 			PanelWidget
 		];
