@@ -5,6 +5,7 @@
 #include "SLookMatchPanel.h"
 #include "ScopeSessionManager.h"
 #include "ScopeAnalyzer.h"
+#include "ViewportStreamer.h"
 #include "Widgets/Docking/SDockTab.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Text/STextBlock.h"
@@ -80,6 +81,13 @@ void ULookScopesSubsystem::Deinitialize()
 	}
 
 	FLookScopesCommands::Unregister();
+
+	// 停止 NDI 推流
+	if (ViewportStreamer.IsValid())
+	{
+		ViewportStreamer->StopStreaming();
+		ViewportStreamer.Reset();
+	}
 
 	// 销毁 SessionManager（会自动停止实时模式、清理分析器）
 	SessionManager.Reset();
@@ -194,6 +202,36 @@ void ULookScopesSubsystem::RegisterCommands()
 	// 绑定到全局输入处理器
 	InputProcessor = MakeShared<FLookScopesInputProcessor>(CommandList);
 	FSlateApplication::Get().RegisterInputPreProcessor(InputProcessor, 0);
+}
+
+// ============================================================
+// NDI 推流控制
+// ============================================================
+
+void ULookScopesSubsystem::StartNDIStream(const FString& SourceName)
+{
+	if (!ViewportStreamer.IsValid())
+	{
+		ViewportStreamer = MakeShared<FViewportStreamer>();
+	}
+
+	if (!ViewportStreamer->IsStreaming())
+	{
+		ViewportStreamer->StartStreaming(SourceName);
+	}
+}
+
+void ULookScopesSubsystem::StopNDIStream()
+{
+	if (ViewportStreamer.IsValid())
+	{
+		ViewportStreamer->StopStreaming();
+	}
+}
+
+bool ULookScopesSubsystem::IsNDIStreaming() const
+{
+	return ViewportStreamer.IsValid() && ViewportStreamer->IsStreaming();
 }
 
 TSharedRef<SDockTab> ULookScopesSubsystem::SpawnScopeTab(const FSpawnTabArgs& Args)

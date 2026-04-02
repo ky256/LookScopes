@@ -1,0 +1,48 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="I:\Aura\Plugins\LookScopes\DaVinciPlugin\NDIReceiver\NDIReceiverPlugin.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\ProgramData\Blackmagic Design\DaVinci Resolve\Support\Developer\OpenFX\Support\Library\ofxsCore.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\ProgramData\Blackmagic Design\DaVinci Resolve\Support\Developer\OpenFX\Support\Library\ofxsImageEffect.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\ProgramData\Blackmagic Design\DaVinci Resolve\Support\Developer\OpenFX\Support\Library\ofxsInteract.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\ProgramData\Blackmagic Design\DaVinci Resolve\Support\Developer\OpenFX\Support\Library\ofxsLog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\ProgramData\Blackmagic Design\DaVinci Resolve\Support\Developer\OpenFX\Support\Library\ofxsMultiThread.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\ProgramData\Blackmagic Design\DaVinci Resolve\Support\Developer\OpenFX\Support\Library\ofxsParams.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\ProgramData\Blackmagic Design\DaVinci Resolve\Support\Developer\OpenFX\Support\Library\ofxsProperty.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\ProgramData\Blackmagic Design\DaVinci Resolve\Support\Developer\OpenFX\Support\Library\ofxsPropertyValidation.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="I:\Aura\Plugins\LookScopes\DaVinciPlugin\NDIReceiver\NDIReceiverPlugin.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="I:\Aura\Plugins\LookScopes\DaVinciPlugin\NDIReceiver\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{37DE5CA0-A28D-3D32-B0AC-3770F2E769F8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{C084F5A4-5982-3B09-A7DB-F1564CE1BEC9}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

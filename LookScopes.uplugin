@@ -17,9 +17,20 @@
 	"EnabledByDefault": true,
 	"Modules": [
 		{
-		"Name": "LookScopes",
+			"Name": "LookScopes",
 			"Type": "Editor",
 			"LoadingPhase": "PostConfigInit"
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "MediaIOFramework",
+			"Enabled": true
+		},
+		{
+			"Name": "NDIMedia",
+			"Enabled": true,
+			"Optional": true
 		}
 	]
 }

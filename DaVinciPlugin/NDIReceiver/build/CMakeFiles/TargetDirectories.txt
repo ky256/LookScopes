@@ -1,0 +1,4 @@
+I:/Aura/Plugins/LookScopes/DaVinciPlugin/NDIReceiver/build/CMakeFiles/NDIReceiverPlugin.dir
+I:/Aura/Plugins/LookScopes/DaVinciPlugin/NDIReceiver/build/CMakeFiles/INSTALL.dir
+I:/Aura/Plugins/LookScopes/DaVinciPlugin/NDIReceiver/build/CMakeFiles/ALL_BUILD.dir
+I:/Aura/Plugins/LookScopes/DaVinciPlugin/NDIReceiver/build/CMakeFiles/ZERO_CHECK.dir

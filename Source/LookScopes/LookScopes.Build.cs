@@ -32,7 +32,8 @@ public class LookScopes : ModuleRules
 				"EditorSubsystem",
 				"ToolMenus",
 				"EditorFramework",
-				"WorkspaceMenuStructure"
+				"WorkspaceMenuStructure",
+				"MediaIOCore"
 			}
 		);
 	}

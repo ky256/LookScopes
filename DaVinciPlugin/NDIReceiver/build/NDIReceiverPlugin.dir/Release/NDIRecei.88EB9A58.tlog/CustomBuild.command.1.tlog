@@ -1,0 +1,10 @@
+^I:\AURA\PLUGINS\LOOKSCOPES\DAVINCIPLUGIN\NDIRECEIVER\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SI:/Aura/Plugins/LookScopes/DaVinciPlugin/NDIReceiver -BI:/Aura/Plugins/LookScopes/DaVinciPlugin/NDIReceiver/build --check-stamp-file I:/Aura/Plugins/LookScopes/DaVinciPlugin/NDIReceiver/build/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

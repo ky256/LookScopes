@@ -18,6 +18,8 @@
 #include "Widgets/Layout/SSplitter.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Styling/AppStyle.h"
+#include "LookScopesSubsystem.h"
+#include "Editor.h"
 
 #define LOCTEXT_NAMESPACE "SLookMatchPanel"
 
@@ -344,6 +346,83 @@ TSharedRef<SWidget> SLookMatchPanel::BuildToolbar()
 					SNew(STextBlock)
 					.Text(LOCTEXT("AnalyzeOnce", "📸 单次分析"))
 					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+				]
+			]
+
+			// NDI 分隔线
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(8.0f, 0.0f)
+			[
+				SNew(SSeparator)
+				.Orientation(Orient_Vertical)
+				.Thickness(1.0f)
+			]
+
+			// NDI 推流按钮
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2.0f, 0.0f)
+			[
+				SNew(SButton)
+				.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+				.ContentPadding(FMargin(6.0f, 3.0f))
+				.ToolTipText(LOCTEXT("NDIStreamTooltip", "开始/停止 NDI 推流到 DaVinci Resolve"))
+				.OnClicked_Lambda([this]()
+				{
+					if (auto* Subsystem = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+					{
+						if (Subsystem->IsNDIStreaming())
+							Subsystem->StopNDIStream();
+						else
+							Subsystem->StartNDIStream();
+					}
+					return FReply::Handled();
+				})
+				[
+					SNew(SHorizontalBox)
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					.Padding(0.0f, 0.0f, 4.0f, 0.0f)
+					[
+						SNew(STextBlock)
+						.Text_Lambda([this]() -> FText
+						{
+							if (auto* Subsystem = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+								return Subsystem->IsNDIStreaming()
+									? FText::FromString(TEXT("\x25CF"))
+									: FText::FromString(TEXT("\x25CB"));
+							return FText::FromString(TEXT("\x25CB"));
+						})
+						.ColorAndOpacity_Lambda([this]() -> FSlateColor
+						{
+							if (auto* Subsystem = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+								return Subsystem->IsNDIStreaming()
+									? FSlateColor(FLinearColor(0.9f, 0.3f, 0.2f))
+									: FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f));
+							return FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f));
+						})
+						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 12))
+					]
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+						.Text_Lambda([this]() -> FText
+						{
+							if (auto* Subsystem = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+								return Subsystem->IsNDIStreaming()
+									? LOCTEXT("StopNDI", "NDI Stop")
+									: LOCTEXT("StartNDI", "NDI Stream");
+							return LOCTEXT("StartNDI", "NDI Stream");
+						})
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+					]
 				]
 			]
 

@@ -10,6 +10,7 @@
 
 class SLookMatchPanel;
 class FScopeSessionManager;
+class FViewportStreamer;
 
 /**
  * ULookScopesSubsystem - 编辑器子系统
@@ -40,6 +41,14 @@ public:
 	/** 获取会话管理器 */
 	TSharedPtr<FScopeSessionManager> GetSessionManager() const { return SessionManager; }
 
+	/** NDI 推流控制 */
+	void StartNDIStream(const FString& SourceName = TEXT("UE_LookScopes"));
+	void StopNDIStream();
+	bool IsNDIStreaming() const;
+
+	/** 获取推流器 */
+	TSharedPtr<FViewportStreamer> GetViewportStreamer() const { return ViewportStreamer; }
+
 private:
 	/** 注册 Tab Spawner */
 	void RegisterTabSpawner();
@@ -65,6 +74,9 @@ private:
 
 	/** 命令列表 */
 	TSharedPtr<FUICommandList> CommandList;
+
+	/** NDI 视口推流器 */
+	TSharedPtr<FViewportStreamer> ViewportStreamer;
 
 	/** 全局输入处理器（用于快捷键拦截） */
 	TSharedPtr<class IInputProcessor> InputProcessor;
