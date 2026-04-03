@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Async/Future.h"
 #include "ViewportCapture.h"
 
 class FAIGradingViewExtension;
@@ -108,11 +109,12 @@ private:
 	TSharedPtr<FAIGradingViewExtension> ViewExtension;
 
 	// --- 推理管线 ---
-	void ProcessCapturedFrame(const FViewportCaptureResult& Capture);
+	void DispatchAsyncInference(const FViewportCaptureResult& Capture);
 	TArray<float> PreprocessFrame(const TArray<FColor>& Pixels, int32 Width, int32 Height);
 	bool RunNNEInference(const TArray<float>& InputTensor, int32 Height, int32 Width, TArray<float>& OutLUT);
 	void ApplyAndUpdateLUT(const TArray<float>& RawLUT);
 	void WriteIdentityLUT();
+	void WaitForInFlightInference();
 
 	// --- Tick ---
 	bool OnTick(float DeltaTime);
@@ -124,6 +126,14 @@ private:
 	// --- LUT 数据 (CPU) ---
 	TArray<float> SmoothedLUT;
 	bool bFirstLUT = true;
+
+	// --- 异步推理 ---
+	std::atomic<bool> bInferenceInFlight{false};
+	TArray<float> PendingLUTResult;
+	float PendingInferenceTimeMs = 0.0f;
+	int32 PendingCaptureWidth = 0;
+	int32 PendingCaptureHeight = 0;
+	FCriticalSection InferenceLock;
 
 	// --- 状态 ---
 	bool bEnabled = false;

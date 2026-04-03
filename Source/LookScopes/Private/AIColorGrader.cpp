@@ -14,6 +14,7 @@
 #include "TextureResource.h"
 #include "RenderingThread.h"
 #include "RHICommandList.h"
+#include "Async/Async.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAIGrader, Log, All);
 
@@ -94,11 +95,15 @@ void FAIColorGrader::Shutdown()
 {
 	if (!bInitialized) return;
 
+	bEnabled = false;
+
 	if (TickHandle.IsValid())
 	{
 		FTSTicker::GetCoreTicker().RemoveTicker(TickHandle);
 		TickHandle.Reset();
 	}
+
+	WaitForInFlightInference();
 
 	if (ViewExtension.IsValid())
 	{
@@ -116,7 +121,6 @@ void FAIColorGrader::Shutdown()
 	DestroyLUTTexture();
 
 	bModelLoaded = false;
-	bEnabled = false;
 	bInitialized = false;
 	bFirstLUT = true;
 	TotalInferenceCount = 0;
@@ -383,6 +387,11 @@ void FAIColorGrader::WriteIdentityLUT()
 
 void FAIColorGrader::SetEnabled(bool bInEnabled)
 {
+	if (!bInEnabled)
+	{
+		WaitForInFlightInference();
+	}
+
 	bEnabled = bInEnabled;
 	if (ViewExtension.IsValid())
 	{
@@ -508,9 +517,10 @@ static void DownsamplePixels(const TArray<FColor>& Src, int32 SrcW, int32 SrcH,
 	}
 }
 
-void FAIColorGrader::ProcessCapturedFrame(const FViewportCaptureResult& Capture)
+void FAIColorGrader::DispatchAsyncInference(const FViewportCaptureResult& Capture)
 {
-	double T0 = FPlatformTime::Seconds();
+	if (bInferenceInFlight.load()) return;
+	bInferenceInFlight.store(true);
 
 	constexpr int32 AI_INPUT_SIZE = 256;
 	TArray<FColor> SmallPixels;
@@ -526,37 +536,42 @@ void FAIColorGrader::ProcessCapturedFrame(const FViewportCaptureResult& Capture)
 
 	const int32 InputW = (SmallPixels.Num() == AI_INPUT_SIZE * AI_INPUT_SIZE) ? AI_INPUT_SIZE : Capture.Width;
 	const int32 InputH = (SmallPixels.Num() == AI_INPUT_SIZE * AI_INPUT_SIZE) ? AI_INPUT_SIZE : Capture.Height;
+	const int32 SrcW = Capture.Width;
+	const int32 SrcH = Capture.Height;
 
-	double T1 = FPlatformTime::Seconds();
+	Async(EAsyncExecution::ThreadPool,
+		[this, Pixels = MoveTemp(SmallPixels), InputW, InputH, SrcW, SrcH]() mutable
+		{
+			double T0 = FPlatformTime::Seconds();
 
-	TArray<float> InputTensor = PreprocessFrame(SmallPixels, InputW, InputH);
+			TArray<float> InputTensor = PreprocessFrame(Pixels, InputW, InputH);
 
-	double T2 = FPlatformTime::Seconds();
+			double T1 = FPlatformTime::Seconds();
 
-	TArray<float> RawLUT;
-	if (!RunNNEInference(InputTensor, InputH, InputW, RawLUT))
+			TArray<float> RawLUT;
+			bool bOk = RunNNEInference(InputTensor, InputH, InputW, RawLUT);
+
+			double T2 = FPlatformTime::Seconds();
+
+			if (bOk)
+			{
+				FScopeLock Lock(&InferenceLock);
+				PendingLUTResult = MoveTemp(RawLUT);
+				PendingInferenceTimeMs = static_cast<float>((T2 - T0) * 1000.0);
+				PendingCaptureWidth = SrcW;
+				PendingCaptureHeight = SrcH;
+			}
+
+			bInferenceInFlight.store(false);
+		});
+}
+
+void FAIColorGrader::WaitForInFlightInference()
+{
+	while (bInferenceInFlight.load())
 	{
-		return;
+		FPlatformProcess::Sleep(0.001f);
 	}
-
-	double T3 = FPlatformTime::Seconds();
-
-	ApplyAndUpdateLUT(RawLUT);
-
-	double T4 = FPlatformTime::Seconds();
-
-	LastInferenceTimeMs = static_cast<float>((T4 - T0) * 1000.0);
-	TotalInferenceCount++;
-
-	UE_LOG(LogAIGrader, Log, TEXT("#%d 总%.1fms [%s] | 降采样%.1f 预处理%.1f 推理%.1f 应用%.1f | src=%dx%d"),
-		TotalInferenceCount,
-		LastInferenceTimeMs,
-		bUsingGPU ? TEXT("GPU") : TEXT("CPU"),
-		(T1 - T0) * 1000.0,
-		(T2 - T1) * 1000.0,
-		(T3 - T2) * 1000.0,
-		(T4 - T3) * 1000.0,
-		Capture.Width, Capture.Height);
 }
 
 void FAIColorGrader::InferOnce()
@@ -567,6 +582,8 @@ void FAIColorGrader::InferOnce()
 		return;
 	}
 
+	WaitForInFlightInference();
+
 	FViewportCaptureResult Capture = FrameCapture.CaptureCurrentFrame();
 	if (!Capture.bIsValid)
 	{
@@ -574,11 +591,34 @@ void FAIColorGrader::InferOnce()
 		return;
 	}
 
-	ProcessCapturedFrame(Capture);
+	constexpr int32 AI_INPUT_SIZE = 256;
+	TArray<FColor> SmallPixels;
+	if (Capture.Width > AI_INPUT_SIZE * 2 || Capture.Height > AI_INPUT_SIZE * 2)
+	{
+		DownsamplePixels(Capture.Pixels, Capture.Width, Capture.Height,
+			SmallPixels, AI_INPUT_SIZE, AI_INPUT_SIZE);
+	}
+	else
+	{
+		SmallPixels = Capture.Pixels;
+	}
+	const int32 InputW = (SmallPixels.Num() == AI_INPUT_SIZE * AI_INPUT_SIZE) ? AI_INPUT_SIZE : Capture.Width;
+	const int32 InputH = (SmallPixels.Num() == AI_INPUT_SIZE * AI_INPUT_SIZE) ? AI_INPUT_SIZE : Capture.Height;
+
+	TArray<float> InputTensor = PreprocessFrame(SmallPixels, InputW, InputH);
+	TArray<float> RawLUT;
+	if (RunNNEInference(InputTensor, InputH, InputW, RawLUT))
+	{
+		ApplyAndUpdateLUT(RawLUT);
+		TotalInferenceCount++;
+	}
 }
 
 // ============================================================
-// Tick — 异步流水线: ViewExtension 在渲染线程回读 → 游戏线程收集 + 推理
+// Tick — 三段式状态机:
+//   1. 收取异步推理结果 → ApplyAndUpdateLUT
+//   2. 收取帧捕获 → 派发异步推理
+//   3. 定时请求下一次帧捕获
 // ============================================================
 
 bool FAIColorGrader::OnTick(float DeltaTime)
@@ -586,7 +626,52 @@ bool FAIColorGrader::OnTick(float DeltaTime)
 	if (!bEnabled || !bModelLoaded) return true;
 	if (!ViewExtension.IsValid()) return true;
 
-	if (ViewExtension->IsCaptureReady())
+	// 1. 异步推理完成 → 取回结果应用到 LUT
+	if (!bInferenceInFlight.load())
+	{
+		TArray<float> ResultLUT;
+		float ResultTimeMs = 0.0f;
+		int32 ResultW = 0, ResultH = 0;
+		{
+			FScopeLock Lock(&InferenceLock);
+			if (PendingLUTResult.Num() > 0)
+			{
+				ResultLUT = MoveTemp(PendingLUTResult);
+				ResultTimeMs = PendingInferenceTimeMs;
+				ResultW = PendingCaptureWidth;
+				ResultH = PendingCaptureHeight;
+			}
+		}
+		if (ResultLUT.Num() > 0)
+		{
+			double T0 = FPlatformTime::Seconds();
+			ApplyAndUpdateLUT(ResultLUT);
+			double T1 = FPlatformTime::Seconds();
+
+			TotalInferenceCount++;
+			LastInferenceTimeMs = ResultTimeMs + static_cast<float>((T1 - T0) * 1000.0);
+
+			UE_LOG(LogAIGrader, Verbose, TEXT("#%d 总%.1fms [%s] | 异步推理%.1f 应用%.1f | src=%dx%d | LUT[0]=%.4f"),
+				TotalInferenceCount,
+				LastInferenceTimeMs,
+				bUsingGPU ? TEXT("GPU") : TEXT("CPU"),
+				ResultTimeMs,
+				(T1 - T0) * 1000.0,
+				ResultW, ResultH,
+				SmoothedLUT.Num() > 0 ? SmoothedLUT[0] : -1.0f);
+
+			if (TotalInferenceCount % 100 == 0)
+			{
+				UE_LOG(LogAIGrader, Log, TEXT("推理统计: #%d 平均%.1fms [%s] | LUT[0]=%.4f"),
+					TotalInferenceCount, LastInferenceTimeMs,
+					bUsingGPU ? TEXT("GPU") : TEXT("CPU"),
+					SmoothedLUT.Num() > 0 ? SmoothedLUT[0] : -1.0f);
+			}
+		}
+	}
+
+	// 2. 帧捕获就绪 + 无飞行中推理 → 派发异步推理
+	if (!bInferenceInFlight.load() && ViewExtension->IsCaptureReady())
 	{
 		auto CaptureResult = ViewExtension->CollectCaptureResult();
 		if (CaptureResult.bIsValid)
@@ -596,15 +681,31 @@ bool FAIColorGrader::OnTick(float DeltaTime)
 			Capture.Width = CaptureResult.Width;
 			Capture.Height = CaptureResult.Height;
 			Capture.bIsValid = true;
-			ProcessCapturedFrame(Capture);
+			DispatchAsyncInference(Capture);
+		}
+		else
+		{
+			UE_LOG(LogAIGrader, Warning, TEXT("帧捕获无效 (pixels=%d)"), CaptureResult.Pixels.Num());
 		}
 	}
 
+	// 3. 定时请求下一次帧捕获
 	TimeSinceLastInference += DeltaTime;
-	if (TimeSinceLastInference >= InferenceInterval && !ViewExtension->HasPendingCapture())
+	if (TimeSinceLastInference >= InferenceInterval
+		&& !ViewExtension->HasPendingCapture()
+		&& !bInferenceInFlight.load())
 	{
 		TimeSinceLastInference = 0.0f;
 		ViewExtension->RequestFrameCapture();
+	}
+	else if (TimeSinceLastInference >= InferenceInterval * 5.0f)
+	{
+		UE_LOG(LogAIGrader, Warning,
+			TEXT("捕获停滞 %.1fs | pending=%d inFlight=%d captureReady=%d"),
+			TimeSinceLastInference,
+			ViewExtension->HasPendingCapture() ? 1 : 0,
+			bInferenceInFlight.load() ? 1 : 0,
+			ViewExtension->IsCaptureReady() ? 1 : 0);
 	}
 
 	return true;
