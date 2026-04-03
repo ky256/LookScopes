@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "davinci-mcp": {
+      "command": "I:\\Aura\\Plugins\\LookScopes\\DaVinciPlugin\\MCPServer\\.venv\\Scripts\\python.exe",
+      "args": [
+        "-m",
+        "davinci_mcp"
+      ],
+      "disabled": false
+    }
+  }
+}

@@ -1,15 +1,21 @@
-// NDI Receiver OFX Generator Plugin for DaVinci Resolve
-// Receives NDI video from UE LookScopes and presents it as a source in Resolve's Color page.
+// NDI Receiver + AI LUT OFX Generator Plugin for DaVinci Resolve
+// Receives NDI video from UE LookScopes, optionally applies a .cube 3D LUT,
+// and presents the result as a source in Resolve.
 
 #include "NDIReceiverPlugin.h"
 #include "ofxsProcessing.h"
 #include <cstring>
 #include <cstdio>
+#include <cmath>
 #include <mutex>
 #include <atomic>
 #include <thread>
 #include <vector>
 #include <memory>
+#include <string>
+#include <fstream>
+#include <sstream>
+#include <algorithm>
 
 // NDI SDK - dynamic loading (no link-time dependency)
 #ifdef _WIN32
@@ -76,21 +82,178 @@ static const NDIlib_v5* ManualLoadNDI()
 }
 
 // ============================================================
+// 3D LUT Engine
+// ============================================================
+
+struct LUT3D
+{
+    std::vector<float> data;   // R,G,B interleaved — size^3 * 3 floats
+    int size = 0;              // entries per axis
+    std::string filePath;
+    FILETIME lastWriteTime{};
+
+    bool empty() const { return size == 0 || data.empty(); }
+
+    bool loadCube(const std::string& path)
+    {
+        std::ifstream f(path);
+        if (!f.is_open()) return false;
+
+        std::vector<float> newData;
+        int newSize = 0;
+        std::string line;
+
+        while (std::getline(f, line))
+        {
+            if (line.empty() || line[0] == '#') continue;
+
+            if (line.rfind("LUT_3D_SIZE", 0) == 0)
+            {
+                std::istringstream ss(line.substr(11));
+                ss >> newSize;
+                if (newSize < 2 || newSize > 256) return false;
+                newData.reserve((size_t)newSize * newSize * newSize * 3);
+                continue;
+            }
+
+            if (line.rfind("TITLE", 0) == 0 ||
+                line.rfind("DOMAIN_MIN", 0) == 0 ||
+                line.rfind("DOMAIN_MAX", 0) == 0 ||
+                line.rfind("LUT_1D_SIZE", 0) == 0)
+                continue;
+
+            if (newSize == 0) continue;
+
+            float r, g, b;
+            std::istringstream ss(line);
+            if (ss >> r >> g >> b)
+            {
+                newData.push_back(r);
+                newData.push_back(g);
+                newData.push_back(b);
+            }
+        }
+
+        size_t expected = (size_t)newSize * newSize * newSize * 3;
+        if (newData.size() != expected) return false;
+
+        data = std::move(newData);
+        size = newSize;
+        filePath = path;
+        return true;
+    }
+
+    // Trilinear interpolation lookup
+    inline void apply(float& r, float& g, float& b) const
+    {
+        if (empty()) return;
+
+        float maxIdx = (float)(size - 1);
+        float rr = std::max(0.0f, std::min(r * maxIdx, maxIdx));
+        float gg = std::max(0.0f, std::min(g * maxIdx, maxIdx));
+        float bb = std::max(0.0f, std::min(b * maxIdx, maxIdx));
+
+        int r0 = (int)rr, g0 = (int)gg, b0 = (int)bb;
+        int r1 = std::min(r0 + 1, size - 1);
+        int g1 = std::min(g0 + 1, size - 1);
+        int b1 = std::min(b0 + 1, size - 1);
+
+        float fr = rr - r0, fg = gg - g0, fb = bb - b0;
+
+        // .cube ordering: R inner, G middle, B outer
+        auto idx = [&](int ri, int gi, int bi) -> size_t {
+            return ((size_t)bi * size * size + (size_t)gi * size + ri) * 3;
+        };
+
+        // 8 corner samples
+        const float* c000 = &data[idx(r0, g0, b0)];
+        const float* c100 = &data[idx(r1, g0, b0)];
+        const float* c010 = &data[idx(r0, g1, b0)];
+        const float* c110 = &data[idx(r1, g1, b0)];
+        const float* c001 = &data[idx(r0, g0, b1)];
+        const float* c101 = &data[idx(r1, g0, b1)];
+        const float* c011 = &data[idx(r0, g1, b1)];
+        const float* c111 = &data[idx(r1, g1, b1)];
+
+        for (int ch = 0; ch < 3; ++ch)
+        {
+            float c00 = c000[ch] * (1 - fr) + c100[ch] * fr;
+            float c10 = c010[ch] * (1 - fr) + c110[ch] * fr;
+            float c01 = c001[ch] * (1 - fr) + c101[ch] * fr;
+            float c11 = c011[ch] * (1 - fr) + c111[ch] * fr;
+
+            float c0 = c00 * (1 - fg) + c10 * fg;
+            float c1 = c01 * (1 - fg) + c11 * fg;
+
+            float val = c0 * (1 - fb) + c1 * fb;
+            if (ch == 0) r = val;
+            else if (ch == 1) g = val;
+            else b = val;
+        }
+    }
+};
+
+// Global LUT state — shared across render calls, protected by mutex
+static LUT3D g_LUT;
+static std::mutex g_LUTMutex;
+
+static bool CheckFileChanged(const std::string& path, FILETIME& lastTime)
+{
+    if (path.empty()) return false;
+    HANDLE hFile = CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                               nullptr, OPEN_EXISTING, 0, nullptr);
+    if (hFile == INVALID_HANDLE_VALUE) return false;
+    FILETIME ft{};
+    GetFileTime(hFile, nullptr, nullptr, &ft);
+    CloseHandle(hFile);
+    if (ft.dwHighDateTime != lastTime.dwHighDateTime || ft.dwLowDateTime != lastTime.dwLowDateTime)
+    {
+        lastTime = ft;
+        return true;
+    }
+    return false;
+}
+
+static void TryReloadLUT(const std::string& path)
+{
+    if (path.empty()) return;
+    std::lock_guard<std::mutex> lock(g_LUTMutex);
+    if (path != g_LUT.filePath || CheckFileChanged(path, g_LUT.lastWriteTime))
+    {
+        LUT3D newLut;
+        if (newLut.loadCube(path))
+        {
+            newLut.filePath = path;
+            newLut.lastWriteTime = g_LUT.lastWriteTime;
+            g_LUT = std::move(newLut);
+            fprintf(stderr, "[NDIReceiver] LUT loaded: %s (size=%d)\n", path.c_str(), g_LUT.size);
+        }
+        else
+        {
+            fprintf(stderr, "[NDIReceiver] Failed to load LUT: %s\n", path.c_str());
+        }
+    }
+}
+
+// ============================================================
 // Plugin identity
 // ============================================================
 
-static const char* kPluginName = "NDI Receiver (UE Bridge)";
+static const char* kPluginName = "NDI Receiver + AI Grade (UE Bridge)";
 static const char* kPluginGrouping = "LookScopes";
 static const char* kPluginDescription =
-    "Receives NDI video stream from Unreal Engine.\n"
-    "Use as a Generator source in DaVinci Resolve to preview UE viewport in real-time.";
+    "Receives NDI video from Unreal Engine and optionally applies a .cube 3D LUT.\n"
+    "AI color grading: point LUT Path to the MCP-generated .cube file for live preview.";
 static const char* kPluginIdentifier = "com.kuoyu.lookscopes.ndireceiver";
 static const int kPluginVersionMajor = 1;
-static const int kPluginVersionMinor = 0;
+static const int kPluginVersionMinor = 1;
 
 static const char* kParamSourceName = "sourceName";
 static const char* kParamRefresh = "refreshBtn";
 static const char* kParamRefreshCounter = "refreshCounter";
+static const char* kParamLutPath = "lutPath";
+static const char* kParamLutEnable = "lutEnable";
+static const char* kParamLutReload = "lutReloadBtn";
 
 // ============================================================
 // NDI Receiver state (shared across render calls)
@@ -247,6 +410,7 @@ public:
         : OFX::ImageProcessor(p_Instance) {}
 
     void setOutputBounds(int dstW, int dstH) { m_DstW = dstW; m_DstH = dstH; }
+    void setLUTEnabled(bool e) { m_LutEnabled = e; }
 
     virtual void multiThreadProcessImages(OfxRectI p_ProcWindow) override
     {
@@ -270,7 +434,6 @@ public:
         int dstW = m_DstW > 0 ? m_DstW : (p_ProcWindow.x2 - p_ProcWindow.x1);
         int dstH = m_DstH > 0 ? m_DstH : (p_ProcWindow.y2 - p_ProcWindow.y1);
 
-        // Fit source into destination preserving aspect ratio
         float scaleX = (float)dstW / srcW;
         float scaleY = (float)dstH / srcH;
         float scale = std::min(scaleX, scaleY);
@@ -279,12 +442,24 @@ public:
         int offsetX = (dstW - fitW) / 2;
         int offsetY = (dstH - fitH) / 2;
 
+        // Snapshot the LUT under its own lock to avoid holding both locks
+        bool useLut = false;
+        LUT3D lutCopy;
+        if (m_LutEnabled)
+        {
+            std::lock_guard<std::mutex> lutLock(g_LUTMutex);
+            if (!g_LUT.empty())
+            {
+                lutCopy = g_LUT;
+                useLut = true;
+            }
+        }
+
         for (int y = p_ProcWindow.y1; y < p_ProcWindow.y2; ++y)
         {
             float* dstPix = static_cast<float*>(_dstImg->getPixelAddress(p_ProcWindow.x1, y));
             if (!dstPix) continue;
 
-            // OFX Y=0 is bottom, NDI Y=0 is top → flip
             int flippedY = (dstH - 1) - y;
 
             for (int x = p_ProcWindow.x1; x < p_ProcWindow.x2; ++x)
@@ -300,9 +475,16 @@ public:
                     srcY = std::min(srcY, srcH - 1);
 
                     size_t srcIdx = ((size_t)srcY * srcW + srcX) * 4;
-                    dstPix[0] = srcData[srcIdx + 0] / 255.0f;
-                    dstPix[1] = srcData[srcIdx + 1] / 255.0f;
-                    dstPix[2] = srcData[srcIdx + 2] / 255.0f;
+                    float r = srcData[srcIdx + 0] / 255.0f;
+                    float g = srcData[srcIdx + 1] / 255.0f;
+                    float b = srcData[srcIdx + 2] / 255.0f;
+
+                    if (useLut)
+                        lutCopy.apply(r, g, b);
+
+                    dstPix[0] = r;
+                    dstPix[1] = g;
+                    dstPix[2] = b;
                     dstPix[3] = srcData[srcIdx + 3] / 255.0f;
                 }
                 else
@@ -318,6 +500,7 @@ public:
 private:
     int m_DstW = 0;
     int m_DstH = 0;
+    bool m_LutEnabled = false;
 };
 
 // ============================================================
@@ -333,6 +516,8 @@ public:
         m_DstClip = fetchClip(kOfxImageEffectOutputClipName);
         m_SourceName = fetchStringParam(kParamSourceName);
         m_RefreshCounter = fetchIntParam(kParamRefreshCounter);
+        m_LutPath = fetchStringParam(kParamLutPath);
+        m_LutEnable = fetchBooleanParam(kParamLutEnable);
 
         g_InstanceCount++;
 
@@ -345,6 +530,12 @@ public:
             g_NDIState->targetSourceName = name;
 
         g_NDIState->StartReceiving();
+
+        // Load LUT if path is already set
+        std::string lutPath;
+        m_LutPath->getValue(lutPath);
+        if (!lutPath.empty())
+            TryReloadLUT(lutPath);
     }
 
     virtual ~NDIReceiverPlugin()
@@ -366,6 +557,15 @@ public:
         std::unique_ptr<OFX::Image> dst(m_DstClip->fetchImage(p_Args.time));
         if (!dst) return;
 
+        // Auto-reload: check if LUT file changed on disk
+        std::string lutPath;
+        m_LutPath->getValue(lutPath);
+        if (!lutPath.empty())
+            TryReloadLUT(lutPath);
+
+        bool lutEnabled = false;
+        m_LutEnable->getValue(lutEnabled);
+
         OfxRectI bounds = dst->getBounds();
         int dstW = bounds.x2 - bounds.x1;
         int dstH = bounds.y2 - bounds.y1;
@@ -374,6 +574,7 @@ public:
         processor.setDstImg(dst.get());
         processor.setRenderWindow(p_Args.renderWindow);
         processor.setOutputBounds(dstW, dstH);
+        processor.setLUTEnabled(lutEnabled);
         processor.process();
     }
 
@@ -396,6 +597,42 @@ public:
             m_RefreshCounter->getValue(val);
             m_RefreshCounter->setValue(val + 1);
         }
+        else if (p_ParamName == kParamLutPath)
+        {
+            std::string path;
+            m_LutPath->getValue(path);
+            if (!path.empty())
+            {
+                TryReloadLUT(path);
+                // Trigger visual refresh
+                if (m_RefreshCounter)
+                {
+                    int val = 0;
+                    m_RefreshCounter->getValue(val);
+                    m_RefreshCounter->setValue(val + 1);
+                }
+            }
+        }
+        else if (p_ParamName == kParamLutReload)
+        {
+            std::string path;
+            m_LutPath->getValue(path);
+            if (!path.empty())
+            {
+                // Force reload by resetting lastWriteTime
+                {
+                    std::lock_guard<std::mutex> lock(g_LUTMutex);
+                    g_LUT.lastWriteTime = {};
+                }
+                TryReloadLUT(path);
+                if (m_RefreshCounter)
+                {
+                    int val = 0;
+                    m_RefreshCounter->getValue(val);
+                    m_RefreshCounter->setValue(val + 1);
+                }
+            }
+        }
     }
 
     virtual bool isIdentity(const OFX::IsIdentityArguments&, OFX::Clip*&, double&) override
@@ -407,6 +644,8 @@ private:
     OFX::Clip* m_DstClip = nullptr;
     OFX::StringParam* m_SourceName = nullptr;
     OFX::IntParam* m_RefreshCounter = nullptr;
+    OFX::StringParam* m_LutPath = nullptr;
+    OFX::BooleanParam* m_LutEnable = nullptr;
 };
 
 // ============================================================
@@ -489,6 +728,7 @@ void NDIReceiverPluginFactory::describeInContext(OFX::ImageEffectDescriptor& p_D
 
     OFX::PageParamDescriptor* page = p_Desc.definePageParam("Controls");
 
+    // --- NDI ---
     OFX::StringParamDescriptor* sourceNameParam = p_Desc.defineStringParam(kParamSourceName);
     sourceNameParam->setLabel("NDI Source Name");
     sourceNameParam->setHint("Name of the NDI source to receive (must match UE LookScopes source name)");
@@ -507,6 +747,27 @@ void NDIReceiverPluginFactory::describeInContext(OFX::ImageEffectDescriptor& p_D
     refreshCounter->setIsSecret(true);
     refreshCounter->setAnimates(true);
     if (page) page->addChild(*refreshCounter);
+
+    // --- AI LUT Grading ---
+    OFX::BooleanParamDescriptor* lutEnable = p_Desc.defineBooleanParam(kParamLutEnable);
+    lutEnable->setLabel("Enable AI LUT");
+    lutEnable->setHint("Apply the .cube LUT to the incoming NDI stream");
+    lutEnable->setDefault(true);
+    lutEnable->setAnimates(false);
+    if (page) page->addChild(*lutEnable);
+
+    OFX::StringParamDescriptor* lutPath = p_Desc.defineStringParam(kParamLutPath);
+    lutPath->setLabel("LUT Path (.cube)");
+    lutPath->setHint("Absolute path to a .cube 3D LUT file. Auto-reloads when file changes on disk.");
+    lutPath->setDefault("I:\\Aura\\Plugins\\LookScopes\\DaVinciPlugin\\MCPServer\\output\\ai_grade.cube");
+    lutPath->setStringType(OFX::eStringTypeFilePath);
+    lutPath->setAnimates(false);
+    if (page) page->addChild(*lutPath);
+
+    OFX::PushButtonParamDescriptor* lutReload = p_Desc.definePushButtonParam(kParamLutReload);
+    lutReload->setLabel("Reload LUT");
+    lutReload->setHint("Force reload the LUT file from disk");
+    if (page) page->addChild(*lutReload);
 }
 
 OFX::ImageEffect* NDIReceiverPluginFactory::createInstance(OfxImageEffectHandle p_Handle, OFX::ContextEnum)
