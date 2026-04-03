@@ -266,7 +266,8 @@ float FAIColorGrader::SampleLUT33(int32 Channel, float R, float G, float B) cons
 
 	auto Idx = [D](int32 c, int32 r, int32 g, int32 b) -> int32
 	{
-		return c * D * D * D + r * D * D + g * D + b;
+		// Model tensor layout: [Channel, B_in, G_in, R_in]
+		return c * D * D * D + b * D * D + g * D + r;
 	};
 
 	const float MaxIdx = static_cast<float>(D - 1);
@@ -363,13 +364,14 @@ void FAIColorGrader::WriteIdentityLUT()
 	const int32 D = MODEL_LUT_DIM;
 	const float Inv = 1.0f / (D - 1);
 
-	for (int32 r = 0; r < D; r++)
-		for (int32 g = 0; g < D; g++)
-			for (int32 b = 0; b < D; b++)
+	// Tensor layout: [Channel, B_in, G_in, R_in]
+	for (int32 bi = 0; bi < D; bi++)
+		for (int32 gi = 0; gi < D; gi++)
+			for (int32 ri = 0; ri < D; ri++)
 			{
-				SmoothedLUT[0 * D*D*D + r * D*D + g * D + b] = r * Inv;
-				SmoothedLUT[1 * D*D*D + r * D*D + g * D + b] = g * Inv;
-				SmoothedLUT[2 * D*D*D + r * D*D + g * D + b] = b * Inv;
+				SmoothedLUT[0 * D*D*D + bi * D*D + gi * D + ri] = ri * Inv;
+				SmoothedLUT[1 * D*D*D + bi * D*D + gi * D + ri] = gi * Inv;
+				SmoothedLUT[2 * D*D*D + bi * D*D + gi * D + ri] = bi * Inv;
 			}
 	bFirstLUT = true;
 	UpdateLUTTexture();

@@ -55,6 +55,8 @@ const FName ULookScopesSubsystem::ScopeTabId(TEXT("LookScopesTab"));
 // UEditorSubsystem 接口
 // ============================================================
 
+ULookScopesSubsystem::~ULookScopesSubsystem() = default;
+
 void ULookScopesSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);

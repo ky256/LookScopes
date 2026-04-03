@@ -6,12 +6,12 @@
 #include "EditorSubsystem.h"
 #include "Framework/Commands/UICommandList.h"
 #include "Framework/Docking/TabManager.h"
+#include "AIColorGrader.h"
 #include "LookScopesSubsystem.generated.h"
 
 class SLookMatchPanel;
 class FScopeSessionManager;
 class FViewportStreamer;
-class FAIColorGrader;
 
 /**
  * ULookScopesSubsystem - 编辑器子系统
@@ -29,6 +29,8 @@ class LOOKSCOPES_API ULookScopesSubsystem : public UEditorSubsystem
 	GENERATED_BODY()
 
 public:
+	virtual ~ULookScopesSubsystem();
+
 	// --- UEditorSubsystem 接口 ---
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
