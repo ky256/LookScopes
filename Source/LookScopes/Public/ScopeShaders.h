@@ -119,6 +119,38 @@ class FBufferMaxReduceCS : public FGlobalShader
 };
 
 // ============================================================
+// AI 降采样 Compute Shader
+// ============================================================
+
+class FAIDownsampleCS : public FGlobalShader
+{
+	DECLARE_GLOBAL_SHADER(FAIDownsampleCS);
+	SHADER_USE_PARAMETER_STRUCT(FAIDownsampleCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D, InputTexture)
+		SHADER_PARAMETER_SAMPLER(SamplerState, InputSampler)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, OutputTexture)
+		SHADER_PARAMETER(FUintVector2, OutputSize)
+	END_SHADER_PARAMETER_STRUCT()
+
+	static constexpr int32 ThreadGroupSize = 16;
+
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
+	}
+};
+
+// ============================================================
+// AI 降采样 Readback 参数（声明 RDG 纹理依赖）
+// ============================================================
+
+BEGIN_SHADER_PARAMETER_STRUCT(FAIReadbackParameters, )
+	RDG_TEXTURE_ACCESS(DownsampledTexture, ERHIAccess::CopySrc)
+END_SHADER_PARAMETER_STRUCT()
+
+// ============================================================
 // 直方图可视化 Compute Shader
 // ============================================================
 

@@ -1,9 +1,17 @@
 # 构建产物
 Binaries/
 Intermediate/
+_Build/
+Config/FilterPlugin.ini
+
+# DaVinci MCP 运行时输出
+DaVinciPlugin/MCPServer/output/
 
 # Obsidian 编辑器配置
 .obsidian/
+
+# AI 调试产物
+AI/debug/
 
 # 临时文件
 *.log
