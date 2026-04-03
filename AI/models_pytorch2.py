@@ -54,9 +54,9 @@ class TrilinearInterpolation(nn.Module):
         g = img[:, 1:2, :, :]
         b = img[:, 2:3, :, :]
 
-        # grid_sample 3D expects grid in [-1, 1] and shape (N, D_out, H_out, W_out, 3)
-        # grid coords: (x→W=B_axis, y→H=G_axis, z→D=R_axis)
-        grid = torch.cat([b * 2 - 1, g * 2 - 1, r * 2 - 1], dim=1)  # (batch, 3, H, W)
+        # LUT axes: [channel, B_idx, G_idx, R_idx] → D=B, H=G, W=R
+        # grid_sample maps: x→W(R), y→H(G), z→D(B)
+        grid = torch.cat([r * 2 - 1, g * 2 - 1, b * 2 - 1], dim=1)  # (batch, 3, H, W)
         grid = grid.permute(0, 2, 3, 1).unsqueeze(1)                  # (batch, 1, H, W, 3)
 
         # Expand LUT to batch: (1, 3, dim, dim, dim) → (batch, 3, dim, dim, dim)
