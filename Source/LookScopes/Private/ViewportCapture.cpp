@@ -4,60 +4,123 @@
 #include "LevelEditorViewport.h"
 #include "EditorViewportClient.h"
 #include "Editor.h"
+#include "RHIGPUReadback.h"
+#include "RenderingThread.h"
+
+FViewportCapture::~FViewportCapture()
+{
+	if (PendingReadback)
+	{
+		if (!PendingReadback->IsReady())
+		{
+			FlushRenderingCommands();
+		}
+		delete PendingReadback;
+		PendingReadback = nullptr;
+	}
+}
+
+// ============================================================
+// 同步捕获（旧路径，阻塞）
+// ============================================================
 
 FViewportCaptureResult FViewportCapture::CaptureCurrentFrame()
 {
 	FViewportCaptureResult Result;
 
-	// 获取活跃的编辑器视口
 	FEditorViewportClient* ViewportClient = nullptr;
-
-	if (GEditor && GEditor->GetActiveViewport())
+	if (GEditor && GEditor->GetActiveViewport() && GCurrentLevelEditingViewportClient)
 	{
-		if (GCurrentLevelEditingViewportClient)
-		{
-			ViewportClient = GCurrentLevelEditingViewportClient;
-		}
+		ViewportClient = GCurrentLevelEditingViewportClient;
 	}
-
-	if (!ViewportClient)
-	{
-UE_LOG(LogTemp, Error, TEXT("LookScopes: 无法获取活跃的编辑器视口"));
-		return Result;
-	}
+	if (!ViewportClient) return Result;
 
 	FViewport* Viewport = ViewportClient->Viewport;
-	if (!Viewport)
-	{
-UE_LOG(LogTemp, Error, TEXT("LookScopes: 视口无效"));
-		return Result;
-	}
+	if (!Viewport) return Result;
 
-	int32 ViewportWidth = Viewport->GetSizeXY().X;
-	int32 ViewportHeight = Viewport->GetSizeXY().Y;
+	const int32 W = Viewport->GetSizeXY().X;
+	const int32 H = Viewport->GetSizeXY().Y;
+	if (W <= 0 || H <= 0) return Result;
 
-	if (ViewportWidth <= 0 || ViewportHeight <= 0)
-	{
-UE_LOG(LogTemp, Error, TEXT("LookScopes: 视口尺寸无效 (%d x %d)"), ViewportWidth, ViewportHeight);
-		return Result;
-	}
-
-	// ReadPixels 从 GPU 回读当前帧缓冲
 	TArray<FColor> Pixels;
-	bool bSuccess = Viewport->ReadPixels(Pixels);
-	if (!bSuccess || Pixels.Num() == 0)
-	{
-UE_LOG(LogTemp, Error, TEXT("LookScopes: 读取视口像素失败"));
-		return Result;
-	}
-
-UE_LOG(LogTemp, Verbose, TEXT("LookScopes: 捕获视口 %d x %d (%d 像素)"),
-		ViewportWidth, ViewportHeight, Pixels.Num());
+	if (!Viewport->ReadPixels(Pixels) || Pixels.Num() == 0) return Result;
 
 	Result.Pixels = MoveTemp(Pixels);
-	Result.Width = ViewportWidth;
-	Result.Height = ViewportHeight;
+	Result.Width = W;
+	Result.Height = H;
 	Result.bIsValid = true;
+	return Result;
+}
+
+// ============================================================
+// 异步捕获（新路径，不阻塞）
+// ============================================================
+
+void FViewportCapture::RequestAsyncCapture()
+{
+	if (PendingReadback) return;
+
+	FEditorViewportClient* ViewportClient = nullptr;
+	if (GEditor && GEditor->GetActiveViewport() && GCurrentLevelEditingViewportClient)
+	{
+		ViewportClient = GCurrentLevelEditingViewportClient;
+	}
+	if (!ViewportClient || !ViewportClient->Viewport) return;
+
+	FViewport* Viewport = ViewportClient->Viewport;
+	PendingWidth = Viewport->GetSizeXY().X;
+	PendingHeight = Viewport->GetSizeXY().Y;
+	if (PendingWidth <= 0 || PendingHeight <= 0) return;
+
+	FViewportRHIRef ViewportRHI = Viewport->GetViewportRHI();
+	if (!ViewportRHI.IsValid()) return;
+
+	PendingReadback = new FRHIGPUTextureReadback(TEXT("AIGraderCapture"));
+	FRHIGPUTextureReadback* Readback = PendingReadback;
+
+	ENQUEUE_RENDER_COMMAND(AIGraderAsyncCapture)(
+		[Readback, ViewportRHI](FRHICommandListImmediate& RHICmdList)
+		{
+			FTextureRHIRef BackBuffer = RHIGetViewportBackBuffer(ViewportRHI);
+			if (BackBuffer.IsValid())
+			{
+				Readback->EnqueueCopy(RHICmdList, BackBuffer);
+			}
+		});
+}
+
+bool FViewportCapture::IsAsyncReady() const
+{
+	return PendingReadback && PendingReadback->IsReady();
+}
+
+FViewportCaptureResult FViewportCapture::CollectAsyncResult()
+{
+	FViewportCaptureResult Result;
+	if (!PendingReadback || !PendingReadback->IsReady()) return Result;
+
+	int32 RowPitchInPixels = 0;
+	void* RawData = PendingReadback->Lock(RowPitchInPixels);
+	if (RawData && RowPitchInPixels > 0)
+	{
+		Result.Width = PendingWidth;
+		Result.Height = PendingHeight;
+		Result.Pixels.SetNumUninitialized(PendingWidth * PendingHeight);
+
+		const FColor* SrcRows = static_cast<const FColor*>(RawData);
+		for (int32 y = 0; y < PendingHeight; y++)
+		{
+			FMemory::Memcpy(
+				&Result.Pixels[y * PendingWidth],
+				&SrcRows[y * RowPitchInPixels],
+				PendingWidth * sizeof(FColor));
+		}
+		Result.bIsValid = true;
+	}
+
+	PendingReadback->Unlock();
+	delete PendingReadback;
+	PendingReadback = nullptr;
 
 	return Result;
 }

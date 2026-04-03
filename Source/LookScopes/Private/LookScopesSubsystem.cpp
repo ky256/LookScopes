@@ -6,6 +6,7 @@
 #include "ScopeSessionManager.h"
 #include "ScopeAnalyzer.h"
 #include "ViewportStreamer.h"
+#include "AIColorGrader.h"
 #include "Widgets/Docking/SDockTab.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Text/STextBlock.h"
@@ -83,6 +84,13 @@ void ULookScopesSubsystem::Deinitialize()
 	}
 
 	FLookScopesCommands::Unregister();
+
+	// 关闭 AI 调色
+	if (AIColorGrader.IsValid())
+	{
+		AIColorGrader->Shutdown();
+		AIColorGrader.Reset();
+	}
 
 	// 清除视口固定尺寸 & 停止 NDI 推流
 	if (GCurrentLevelEditingViewportClient && GCurrentLevelEditingViewportClient->Viewport)
@@ -264,6 +272,78 @@ bool ULookScopesSubsystem::IsNDIStreaming() const
 {
 	return ViewportStreamer.IsValid() && ViewportStreamer->IsStreaming();
 }
+
+// ============================================================
+// AI 调色控制
+// ============================================================
+
+void ULookScopesSubsystem::EnableAIGrading(const FString& OnnxModelPath)
+{
+	if (!AIColorGrader.IsValid())
+	{
+		AIColorGrader = MakeUnique<FAIColorGrader>();
+		if (!AIColorGrader->Initialize(OnnxModelPath))
+		{
+			UE_LOG(LogTemp, Error, TEXT("LookScopes: AI 调色器初始化失败"));
+		}
+	}
+
+	AIColorGrader->SetEnabled(true);
+}
+
+void ULookScopesSubsystem::DisableAIGrading()
+{
+	if (AIColorGrader.IsValid())
+	{
+		AIColorGrader->SetEnabled(false);
+	}
+}
+
+bool ULookScopesSubsystem::IsAIGradingEnabled() const
+{
+	return AIColorGrader.IsValid() && AIColorGrader->IsEnabled();
+}
+
+void ULookScopesSubsystem::SetAIGradingIntensity(float InIntensity)
+{
+	if (AIColorGrader.IsValid())
+	{
+		AIColorGrader->SetIntensity(InIntensity);
+	}
+}
+
+void ULookScopesSubsystem::SetAIGradingInterval(float Seconds)
+{
+	if (AIColorGrader.IsValid())
+	{
+		AIColorGrader->SetInferenceInterval(Seconds);
+	}
+}
+
+void ULookScopesSubsystem::SetAIGradingSmoothFactor(float Alpha)
+{
+	if (AIColorGrader.IsValid())
+	{
+		AIColorGrader->SetSmoothingFactor(Alpha);
+	}
+}
+
+void ULookScopesSubsystem::TriggerAIInferOnce()
+{
+	if (AIColorGrader.IsValid())
+	{
+		AIColorGrader->InferOnce();
+	}
+}
+
+FAIColorGrader* ULookScopesSubsystem::GetAIColorGrader() const
+{
+	return AIColorGrader.Get();
+}
+
+// ============================================================
+// Tab
+// ============================================================
 
 TSharedRef<SDockTab> ULookScopesSubsystem::SpawnScopeTab(const FSpawnTabArgs& Args)
 {

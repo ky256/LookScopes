@@ -87,6 +87,9 @@ private:
 	/** 构建底部画廊占位区 */
 	TSharedRef<SWidget> BuildGalleryPlaceholder();
 
+	/** 构建 AI 调色区域 */
+	TSharedRef<SWidget> BuildAIGradingArea();
+
 	// --- UI 更新 ---
 
 	/** 获取实时按钮文字 */
@@ -125,6 +128,7 @@ private:
 	bool bPreviewVisible = true;
 	bool bScopesVisible = true;
 	bool bGalleryVisible = true;
+	bool bAIGradingVisible = true;
 
 	// --- 分辨率预设 ---
 

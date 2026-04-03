@@ -11,6 +11,7 @@
 class SLookMatchPanel;
 class FScopeSessionManager;
 class FViewportStreamer;
+class FAIColorGrader;
 
 /**
  * ULookScopesSubsystem - 编辑器子系统
@@ -53,6 +54,16 @@ public:
 	/** 获取推流器 */
 	TSharedPtr<FViewportStreamer> GetViewportStreamer() const { return ViewportStreamer; }
 
+	/** AI 调色控制 */
+	void EnableAIGrading(const FString& OnnxModelPath = FString());
+	void DisableAIGrading();
+	bool IsAIGradingEnabled() const;
+	void SetAIGradingIntensity(float Intensity);
+	void SetAIGradingInterval(float Seconds);
+	void SetAIGradingSmoothFactor(float Alpha);
+	void TriggerAIInferOnce();
+	FAIColorGrader* GetAIColorGrader() const;
+
 private:
 	/** 注册 Tab Spawner */
 	void RegisterTabSpawner();
@@ -87,6 +98,9 @@ private:
 
 	/** 全局输入处理器（用于快捷键拦截） */
 	TSharedPtr<class IInputProcessor> InputProcessor;
+
+	/** AI 调色器 */
+	TUniquePtr<FAIColorGrader> AIColorGrader;
 
 	/** Tab ID */
 	static const FName ScopeTabId;

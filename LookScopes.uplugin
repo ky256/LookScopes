@@ -10,7 +10,7 @@
 	"DocsURL": "",
 	"MarketplaceURL": "",
 	"SupportURL": "",
-	"CanContainContent": false,
+	"CanContainContent": true,
 	"IsBetaVersion": true,
 	"IsExperimentalVersion": false,
 	"Installed": false,
@@ -31,6 +31,10 @@
 			"Name": "NDIMedia",
 			"Enabled": true,
 			"Optional": true
+		},
+		{
+			"Name": "NNERuntimeORT",
+			"Enabled": true
 		}
 	]
 }

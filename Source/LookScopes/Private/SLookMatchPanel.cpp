@@ -20,6 +20,7 @@
 #include "Styling/AppStyle.h"
 #include "Widgets/Input/STextComboBox.h"
 #include "LookScopesSubsystem.h"
+#include "AIColorGrader.h"
 #include "Editor.h"
 
 #define LOCTEXT_NAMESPACE "SLookMatchPanel"
@@ -112,6 +113,13 @@ void SLookMatchPanel::Construct(const FArguments& InArgs)
 			[
 				BuildScopesArea()
 			]
+		]
+
+		// === AI 调色区（含可折叠 section header） ===
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			BuildAIGradingArea()
 		]
 
 		// === 底部画廊区（含可折叠 section header） ===
@@ -819,6 +827,383 @@ TSharedRef<SWidget> SLookMatchPanel::BuildScopesArea()
 						SAssignNew(HistogramDisplay, SScopeTextureDisplay)
 						.TextureWidth(512)
 						.TextureHeight(256)
+					]
+				]
+			]
+		];
+}
+
+// ============================================================
+// UI 构建：AI 调色区域
+// ============================================================
+
+TSharedRef<SWidget> SLookMatchPanel::BuildAIGradingArea()
+{
+	return SNew(SVerticalBox)
+
+		// Section header
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			SNew(SBorder)
+			.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
+			.Padding(0)
+			[
+				SNew(SButton)
+				.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+				.ContentPadding(FMargin(8.0f, 5.0f))
+				.OnClicked_Lambda([this]()
+				{
+					bAIGradingVisible = !bAIGradingVisible;
+					Invalidate(EInvalidateWidgetReason::Layout);
+					return FReply::Handled();
+				})
+				[
+					SNew(SHorizontalBox)
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+						.Text(LOCTEXT("AIGradingHeader", "AI 自动调色"))
+						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
+						.ColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.55f, 0.55f)))
+					]
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					.Padding(8.0f, 0.0f, 0.0f, 0.0f)
+					[
+						SNew(STextBlock)
+						.Text_Lambda([]() -> FText
+						{
+							if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+							{
+								if (FAIColorGrader* G = Sub->GetAIColorGrader())
+								{
+									if (G->IsEnabled() && G->IsModelLoaded())
+									{
+										return FText::Format(
+											LOCTEXT("AIStatusRunning", "推理中 · {0} ms"),
+											FText::AsNumber(FMath::RoundToInt(G->GetLastInferenceTimeMs())));
+									}
+									if (G->IsModelLoaded())
+									{
+										return LOCTEXT("AIStatusReady", "就绪");
+									}
+								}
+							}
+							return LOCTEXT("AIStatusOff", "未加载");
+						})
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+						.ColorAndOpacity_Lambda([]() -> FSlateColor
+						{
+							if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+							{
+								if (Sub->IsAIGradingEnabled())
+									return FSlateColor(FLinearColor(0.2f, 0.9f, 0.2f));
+							}
+							return FSlateColor(FLinearColor(0.35f, 0.35f, 0.35f));
+						})
+					]
+
+					+ SHorizontalBox::Slot()
+					.FillWidth(1.0f)
+					[
+						SNew(SSpacer)
+					]
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+						.Text_Lambda([this]() -> FText
+						{
+							return FText::FromString(bAIGradingVisible ? TEXT("\x25BC") : TEXT("\x25B6"));
+						})
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+						.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.4f, 0.4f)))
+					]
+				]
+			]
+		]
+
+		// 内容区（可折叠）
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			SNew(SBox)
+			.Visibility_Lambda([this]()
+			{
+				return bAIGradingVisible ? EVisibility::Visible : EVisibility::Collapsed;
+			})
+			[
+				SNew(SBorder)
+				.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
+				.Padding(FMargin(12.0f, 6.0f))
+				[
+					SNew(SVerticalBox)
+
+					// 启用开关
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 2.0f)
+					[
+						SNew(SHorizontalBox)
+
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						[
+							SNew(SButton)
+							.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+							.ContentPadding(FMargin(6.0f, 3.0f))
+							.OnClicked_Lambda([]()
+							{
+								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+								{
+									if (Sub->IsAIGradingEnabled())
+										Sub->DisableAIGrading();
+									else
+										Sub->EnableAIGrading();
+								}
+								return FReply::Handled();
+							})
+							[
+								SNew(SHorizontalBox)
+
+								+ SHorizontalBox::Slot()
+								.AutoWidth()
+								.VAlign(VAlign_Center)
+								.Padding(0.0f, 0.0f, 4.0f, 0.0f)
+								[
+									SNew(STextBlock)
+									.Text_Lambda([]() -> FText
+									{
+										if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+											return Sub->IsAIGradingEnabled()
+												? FText::FromString(TEXT("\x25A0"))
+												: FText::FromString(TEXT("\x25A1"));
+										return FText::FromString(TEXT("\x25A1"));
+									})
+									.ColorAndOpacity_Lambda([]() -> FSlateColor
+									{
+										if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+											return Sub->IsAIGradingEnabled()
+												? FSlateColor(FLinearColor(0.2f, 0.8f, 0.4f))
+												: FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f));
+										return FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f));
+									})
+									.Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
+								]
+
+								+ SHorizontalBox::Slot()
+								.AutoWidth()
+								.VAlign(VAlign_Center)
+								[
+									SNew(STextBlock)
+									.Text_Lambda([]() -> FText
+									{
+										if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+											return Sub->IsAIGradingEnabled()
+												? LOCTEXT("AIDisable", "停止 AI 调色")
+												: LOCTEXT("AIEnable", "启用 AI 调色");
+										return LOCTEXT("AIEnable", "启用 AI 调色");
+									})
+									.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+								]
+							]
+						]
+
+						+ SHorizontalBox::Slot()
+						.FillWidth(1.0f)
+						[
+							SNew(SSpacer)
+						]
+
+						// 单次推理按钮
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						[
+							SNew(SButton)
+							.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+							.ContentPadding(FMargin(6.0f, 3.0f))
+							.ToolTipText(LOCTEXT("InferOnceTooltip", "捕获当前帧，推理一次"))
+							.IsEnabled_Lambda([]()
+							{
+								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+								{
+									if (FAIColorGrader* G = Sub->GetAIColorGrader())
+										return G->IsModelLoaded();
+								}
+								return false;
+							})
+							.OnClicked_Lambda([]()
+							{
+								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+									Sub->TriggerAIInferOnce();
+								return FReply::Handled();
+							})
+							[
+								SNew(STextBlock)
+								.Text(LOCTEXT("InferOnce", "单次推理"))
+								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+								.ColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f)))
+							]
+						]
+					]
+
+					// 分隔线
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 4.0f)
+					[
+						SNew(SSeparator)
+					]
+
+					// 强度滑条
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 2.0f)
+					[
+						SNew(SHorizontalBox)
+
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						.Padding(0.0f, 0.0f, 8.0f, 0.0f)
+						[
+							SNew(SBox)
+							.WidthOverride(60.0f)
+							[
+								SNew(STextBlock)
+								.Text(LOCTEXT("AIIntensity", "强度"))
+								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+								.ColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f)))
+							]
+						]
+
+						+ SHorizontalBox::Slot()
+						.FillWidth(1.0f)
+						.VAlign(VAlign_Center)
+						[
+							SNew(SSpinBox<float>)
+							.MinValue(0.0f)
+							.MaxValue(1.0f)
+							.Value(1.0f)
+							.Delta(0.05f)
+							.OnValueChanged_Lambda([](float Val)
+							{
+								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+									Sub->SetAIGradingIntensity(Val);
+							})
+						]
+					]
+
+					// 推理间隔
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 2.0f)
+					[
+						SNew(SHorizontalBox)
+
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						.Padding(0.0f, 0.0f, 8.0f, 0.0f)
+						[
+							SNew(SBox)
+							.WidthOverride(60.0f)
+							[
+								SNew(STextBlock)
+								.Text(LOCTEXT("AIInterval", "间隔(ms)"))
+								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+								.ColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f)))
+							]
+						]
+
+						+ SHorizontalBox::Slot()
+						.FillWidth(1.0f)
+						.VAlign(VAlign_Center)
+						[
+							SNew(SSpinBox<float>)
+							.MinValue(50.0f)
+							.MaxValue(2000.0f)
+							.Value(100.0f)
+							.Delta(50.0f)
+							.OnValueChanged_Lambda([](float Val)
+							{
+								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+									Sub->SetAIGradingInterval(Val / 1000.0f);
+							})
+						]
+					]
+
+					// EMA 平滑
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 2.0f)
+					[
+						SNew(SHorizontalBox)
+
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						.Padding(0.0f, 0.0f, 8.0f, 0.0f)
+						[
+							SNew(SBox)
+							.WidthOverride(60.0f)
+							[
+								SNew(STextBlock)
+								.Text(LOCTEXT("AISmooth", "平滑"))
+								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+								.ColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f)))
+							]
+						]
+
+						+ SHorizontalBox::Slot()
+						.FillWidth(1.0f)
+						.VAlign(VAlign_Center)
+						[
+							SNew(SSpinBox<float>)
+							.MinValue(0.01f)
+							.MaxValue(1.0f)
+							.Value(0.15f)
+							.Delta(0.05f)
+							.OnValueChanged_Lambda([](float Val)
+							{
+								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+									Sub->SetAIGradingSmoothFactor(Val);
+							})
+						]
+					]
+
+					// 推理次数统计
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 4.0f, 0.0f, 0.0f)
+					[
+						SNew(STextBlock)
+						.Text_Lambda([]() -> FText
+						{
+							if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+							{
+								if (FAIColorGrader* G = Sub->GetAIColorGrader())
+								{
+									return FText::Format(
+										LOCTEXT("AIStats", "推理: {0} 次  |  最近耗时: {1} ms"),
+										FText::AsNumber(G->GetTotalInferenceCount()),
+										FText::AsNumber(FMath::RoundToInt(G->GetLastInferenceTimeMs())));
+								}
+							}
+							return LOCTEXT("AIStatsNone", "—");
+						})
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+						.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.4f, 0.4f)))
 					]
 				]
 			]

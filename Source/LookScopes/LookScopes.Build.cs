@@ -33,7 +33,8 @@ public class LookScopes : ModuleRules
 				"ToolMenus",
 				"EditorFramework",
 				"WorkspaceMenuStructure",
-				"MediaIOCore"
+				"MediaIOCore",
+				"NNE"
 			}
 		);
 	}
