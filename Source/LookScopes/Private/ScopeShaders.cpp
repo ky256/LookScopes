@@ -52,3 +52,28 @@ IMPLEMENT_GLOBAL_SHADER(
 	"MainCS",
 	SF_Compute
 );
+
+// ============================================================
+// Bloom Shader 注册
+// ============================================================
+
+IMPLEMENT_GLOBAL_SHADER(
+	FBloomDownsampleCS,
+	"/Plugin/LookScopes/BloomDownsample.usf",
+	"MainCS",
+	SF_Compute
+);
+
+IMPLEMENT_GLOBAL_SHADER(
+	FBloomUpsampleCS,
+	"/Plugin/LookScopes/BloomUpsample.usf",
+	"MainCS",
+	SF_Compute
+);
+
+IMPLEMENT_GLOBAL_SHADER(
+	FBloomCompositeCS,
+	"/Plugin/LookScopes/BloomComposite.usf",
+	"MainCS",
+	SF_Compute
+);

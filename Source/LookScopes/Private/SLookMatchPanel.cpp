@@ -122,6 +122,13 @@ void SLookMatchPanel::Construct(const FArguments& InArgs)
 			BuildAIGradingArea()
 		]
 
+		// === Custom Bloom 区（含可折叠 section header） ===
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			BuildCustomBloomArea()
+		]
+
 		// === 底部画廊区（含可折叠 section header） ===
 		+ SVerticalBox::Slot()
 		.AutoHeight()
@@ -1205,6 +1212,354 @@ TSharedRef<SWidget> SLookMatchPanel::BuildAIGradingArea()
 						})
 						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
 						.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.4f, 0.4f)))
+					]
+				]
+			]
+		];
+}
+
+// ============================================================
+// UI 构建：Custom Bloom 设置区域
+// ============================================================
+
+TSharedRef<SWidget> SLookMatchPanel::BuildCustomBloomArea()
+{
+	auto MakeSliderRow = [](const FText& Label, float Min, float Max, float Default, float Step,
+		TFunction<void(float)> OnChanged, TFunction<float()> GetValue = nullptr) -> TSharedRef<SWidget>
+	{
+		return SNew(SHorizontalBox)
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(0.0f, 0.0f, 8.0f, 0.0f)
+			[
+				SNew(SBox)
+				.WidthOverride(80.0f)
+				[
+					SNew(STextBlock)
+					.Text(Label)
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					.ColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f)))
+				]
+			]
+
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			.VAlign(VAlign_Center)
+			[
+				SNew(SSpinBox<float>)
+				.MinValue(Min)
+				.MaxValue(Max)
+				.Value(Default)
+				.Delta(Step)
+				.OnValueChanged_Lambda([OnChanged](float Val) { OnChanged(Val); })
+			];
+	};
+
+	return SNew(SVerticalBox)
+
+		// Section header
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			SNew(SBorder)
+			.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
+			.Padding(0)
+			[
+				SNew(SButton)
+				.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+				.ContentPadding(FMargin(8.0f, 5.0f))
+				.OnClicked_Lambda([this]()
+				{
+					bBloomVisible = !bBloomVisible;
+					Invalidate(EInvalidateWidgetReason::Layout);
+					return FReply::Handled();
+				})
+				[
+					SNew(SHorizontalBox)
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+						.Text(LOCTEXT("BloomHeader", "Custom Bloom"))
+						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
+						.ColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.55f, 0.55f)))
+					]
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					.Padding(8.0f, 0.0f, 0.0f, 0.0f)
+					[
+						SNew(STextBlock)
+						.Text_Lambda([]() -> FText
+						{
+							if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+								return Sub->IsCustomBloomEnabled()
+									? LOCTEXT("BloomStatusOn", "ON")
+									: LOCTEXT("BloomStatusOff", "OFF");
+							return LOCTEXT("BloomStatusOff", "OFF");
+						})
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+						.ColorAndOpacity_Lambda([]() -> FSlateColor
+						{
+							if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+								return Sub->IsCustomBloomEnabled()
+									? FSlateColor(FLinearColor(0.2f, 0.9f, 0.2f))
+									: FSlateColor(FLinearColor(0.35f, 0.35f, 0.35f));
+							return FSlateColor(FLinearColor(0.35f, 0.35f, 0.35f));
+						})
+					]
+
+					+ SHorizontalBox::Slot()
+					.FillWidth(1.0f)
+					[
+						SNew(SSpacer)
+					]
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+						.Text_Lambda([this]() -> FText
+						{
+							return FText::FromString(bBloomVisible ? TEXT("\x25BC") : TEXT("\x25B6"));
+						})
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+						.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.4f, 0.4f)))
+					]
+				]
+			]
+		]
+
+		// Content (collapsible)
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			SNew(SBox)
+			.Visibility_Lambda([this]()
+			{
+				return bBloomVisible ? EVisibility::Visible : EVisibility::Collapsed;
+			})
+			[
+				SNew(SBorder)
+				.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
+				.Padding(FMargin(12.0f, 6.0f))
+				[
+					SNew(SVerticalBox)
+
+					// Enable toggle
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 2.0f)
+					[
+						SNew(SButton)
+						.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+						.ContentPadding(FMargin(6.0f, 3.0f))
+						.OnClicked_Lambda([]()
+						{
+							if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+								Sub->SetCustomBloomEnabled(!Sub->IsCustomBloomEnabled());
+							return FReply::Handled();
+						})
+						[
+							SNew(SHorizontalBox)
+
+							+ SHorizontalBox::Slot()
+							.AutoWidth()
+							.VAlign(VAlign_Center)
+							.Padding(0.0f, 0.0f, 4.0f, 0.0f)
+							[
+								SNew(STextBlock)
+								.Text_Lambda([]() -> FText
+								{
+									if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+										return Sub->IsCustomBloomEnabled()
+											? FText::FromString(TEXT("\x25A0"))
+											: FText::FromString(TEXT("\x25A1"));
+									return FText::FromString(TEXT("\x25A1"));
+								})
+								.ColorAndOpacity_Lambda([]() -> FSlateColor
+								{
+									if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+										return Sub->IsCustomBloomEnabled()
+											? FSlateColor(FLinearColor(0.2f, 0.8f, 0.4f))
+											: FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f));
+									return FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f));
+								})
+								.Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
+							]
+
+							+ SHorizontalBox::Slot()
+							.AutoWidth()
+							.VAlign(VAlign_Center)
+							[
+								SNew(STextBlock)
+								.Text_Lambda([]() -> FText
+								{
+									if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+										return Sub->IsCustomBloomEnabled()
+											? LOCTEXT("BloomDisable", "关闭 Custom Bloom")
+											: LOCTEXT("BloomEnable", "启用 Custom Bloom");
+									return LOCTEXT("BloomEnable", "启用 Custom Bloom");
+								})
+								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+							]
+						]
+					]
+
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 4.0f)
+					[
+						SNew(SSeparator)
+					]
+
+					// Scene Bloom Intensity
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 2.0f)
+					[
+						MakeSliderRow(
+							LOCTEXT("SceneIntensity", "Scene 强度"),
+							0.0f, 5.0f, 0.8f, 0.1f,
+							[](float Val)
+							{
+								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+									Sub->SetSceneBloomIntensity(Val);
+							})
+					]
+
+					// Scene Bloom Threshold
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 2.0f)
+					[
+						MakeSliderRow(
+							LOCTEXT("SceneThreshold", "Scene 阈值"),
+							0.0f, 5.0f, 1.0f, 0.1f,
+							[](float Val)
+							{
+								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+									Sub->SetSceneBloomThreshold(Val);
+							})
+					]
+
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 4.0f)
+					[
+						SNew(SSeparator)
+					]
+
+					// VFX Bloom Intensity
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 2.0f)
+					[
+						MakeSliderRow(
+							LOCTEXT("VFXIntensity", "VFX 强度"),
+							0.0f, 5.0f, 1.0f, 0.1f,
+							[](float Val)
+							{
+								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+									Sub->SetVFXBloomIntensity(Val);
+							})
+					]
+
+					// VFX Bloom Threshold
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 2.0f)
+					[
+						MakeSliderRow(
+							LOCTEXT("VFXThreshold", "VFX 阈值"),
+							0.0f, 5.0f, 0.2f, 0.05f,
+							[](float Val)
+							{
+								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+									Sub->SetVFXBloomThreshold(Val);
+							})
+					]
+
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 4.0f)
+					[
+						SNew(SSeparator)
+					]
+
+					// Bloom Levels
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 2.0f)
+					[
+						SNew(SHorizontalBox)
+
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						.Padding(0.0f, 0.0f, 8.0f, 0.0f)
+						[
+							SNew(SBox)
+							.WidthOverride(80.0f)
+							[
+								SNew(STextBlock)
+								.Text(LOCTEXT("BloomLevels", "Levels"))
+								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+								.ColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f)))
+							]
+						]
+
+						+ SHorizontalBox::Slot()
+						.FillWidth(1.0f)
+						.VAlign(VAlign_Center)
+						[
+							SNew(SSpinBox<int32>)
+							.MinValue(3)
+							.MaxValue(6)
+							.Value(6)
+							.Delta(1)
+							.OnValueChanged_Lambda([](int32 Val)
+							{
+								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+									Sub->SetBloomLevels(Val);
+							})
+						]
+					]
+
+					// Scatter
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 2.0f)
+					[
+						MakeSliderRow(
+							LOCTEXT("BloomScatter", "Scatter"),
+							0.0f, 1.0f, 0.4f, 0.05f,
+							[](float Val)
+							{
+								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+									Sub->SetBloomScatter(Val);
+							})
+					]
+
+					// Max Brightness (anti-flicker)
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 2.0f)
+					[
+						MakeSliderRow(
+							LOCTEXT("MaxBrightness", "Max亮度"),
+							0.0f, 50.0f, 10.0f, 1.0f,
+							[](float Val)
+							{
+								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+									Sub->SetMaxBrightness(Val);
+							})
 					]
 				]
 			]

@@ -1,0 +1,60 @@
+// Custom Bloom — Dual Kawase Downsample (compute shader)
+// 5-tap pattern: center*4 + 4 diagonal corners
+// First level applies soft-knee threshold when Threshold > 0
+
+#include "/Engine/Public/Platform.ush"
+
+Texture2D    InputTexture;
+SamplerState InputSampler;
+RWTexture2D<float4> OutputTexture;
+
+uint2  OutputSize;
+float2 TexelSize;    // 1.0 / InputSize
+float  Threshold;    // 0 = no threshold (passthrough downsample)
+float  MaxBrightness; // clamp HDR peaks to prevent specular flicker
+
+float3 SoftThreshold(float3 color, float threshold)
+{
+	float brightness = dot(color, float3(0.2126f, 0.7152f, 0.0722f));
+	float knee = threshold * 0.5f;
+	float soft = brightness - threshold + knee;
+	soft = clamp(soft, 0.0f, 2.0f * knee);
+	soft = soft * soft / (4.0f * knee + 1e-5f);
+	float contribution = max(soft, brightness - threshold) / max(brightness, 1e-5f);
+	return color * max(contribution, 0.0f);
+}
+
+[numthreads(16, 16, 1)]
+void MainCS(uint3 DTid : SV_DispatchThreadID)
+{
+	if (DTid.x >= OutputSize.x || DTid.y >= OutputSize.y) return;
+
+	float2 UV = (float2(DTid.xy) + 0.5f) / float2(OutputSize);
+	float2 HalfTexel = TexelSize * 0.5f;
+
+	// Dual Kawase downsample: center*4 + 4 corners
+	float4 Sum  = InputTexture.SampleLevel(InputSampler, UV, 0) * 4.0f;
+	Sum += InputTexture.SampleLevel(InputSampler, UV + float2(-HalfTexel.x, -HalfTexel.y), 0);
+	Sum += InputTexture.SampleLevel(InputSampler, UV + float2( HalfTexel.x, -HalfTexel.y), 0);
+	Sum += InputTexture.SampleLevel(InputSampler, UV + float2(-HalfTexel.x,  HalfTexel.y), 0);
+	Sum += InputTexture.SampleLevel(InputSampler, UV + float2( HalfTexel.x,  HalfTexel.y), 0);
+	Sum *= 0.125f; // divide by 8
+
+	float3 Result = Sum.rgb;
+
+	if (Threshold > 0.0f)
+	{
+		Result = SoftThreshold(Result, Threshold);
+	}
+
+	if (MaxBrightness > 0.0f)
+	{
+		float lum = dot(Result, float3(0.2126f, 0.7152f, 0.0722f));
+		if (lum > MaxBrightness)
+		{
+			Result *= MaxBrightness / lum;
+		}
+	}
+
+	OutputTexture[DTid.xy] = float4(Result, 1.0f);
+}

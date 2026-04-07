@@ -191,3 +191,89 @@ class FHistogramVisualizerCS : public FGlobalShader
 		OutEnvironment.SetDefine(TEXT("HISTOGRAM_BIN_COUNT"), 256);
 	}
 };
+
+// ============================================================
+// Bloom Downsample Compute Shader (Dual Kawase)
+// ============================================================
+
+class FBloomDownsampleCS : public FGlobalShader
+{
+	DECLARE_GLOBAL_SHADER(FBloomDownsampleCS);
+	SHADER_USE_PARAMETER_STRUCT(FBloomDownsampleCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D, InputTexture)
+		SHADER_PARAMETER_SAMPLER(SamplerState, InputSampler)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, OutputTexture)
+		SHADER_PARAMETER(FUintVector2, OutputSize)
+		SHADER_PARAMETER(FVector2f, TexelSize)
+		SHADER_PARAMETER(float, Threshold)
+		SHADER_PARAMETER(float, MaxBrightness)
+	END_SHADER_PARAMETER_STRUCT()
+
+	static constexpr int32 ThreadGroupSize = 16;
+
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
+	}
+};
+
+// ============================================================
+// Bloom Upsample Compute Shader (Dual Kawase)
+// ============================================================
+
+class FBloomUpsampleCS : public FGlobalShader
+{
+	DECLARE_GLOBAL_SHADER(FBloomUpsampleCS);
+	SHADER_USE_PARAMETER_STRUCT(FBloomUpsampleCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D, InputTexture)
+		SHADER_PARAMETER_SAMPLER(SamplerState, InputSampler)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D, BlendTexture)
+		SHADER_PARAMETER_SAMPLER(SamplerState, BlendSampler)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, OutputTexture)
+		SHADER_PARAMETER(FUintVector2, OutputSize)
+		SHADER_PARAMETER(FVector2f, TexelSize)
+		SHADER_PARAMETER(float, BlendWeight)
+	END_SHADER_PARAMETER_STRUCT()
+
+	static constexpr int32 ThreadGroupSize = 16;
+
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
+	}
+};
+
+// ============================================================
+// Bloom Composite Compute Shader
+// ============================================================
+
+class FBloomCompositeCS : public FGlobalShader
+{
+	DECLARE_GLOBAL_SHADER(FBloomCompositeCS);
+	SHADER_USE_PARAMETER_STRUCT(FBloomCompositeCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D, SceneColorTex)
+		SHADER_PARAMETER_SAMPLER(SamplerState, SceneColorSampler)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D, SceneBloomTex)
+		SHADER_PARAMETER_SAMPLER(SamplerState, SceneBloomSampler)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D, VFXBloomTex)
+		SHADER_PARAMETER_SAMPLER(SamplerState, VFXBloomSampler)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, OutputTexture)
+		SHADER_PARAMETER(FUintVector2, OutputSize)
+		SHADER_PARAMETER(float, SceneBloomIntensity)
+		SHADER_PARAMETER(float, VFXBloomIntensity)
+		SHADER_PARAMETER(FVector3f, BloomTint)
+	END_SHADER_PARAMETER_STRUCT()
+
+	static constexpr int32 ThreadGroupSize = 16;
+
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
+	}
+};

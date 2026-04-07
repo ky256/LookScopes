@@ -1,0 +1,41 @@
+// Custom Bloom — Dual Kawase Upsample + Blend (compute shader)
+// 8-tap pattern: 4 diagonal*2 + 4 cardinal, weight sum = 12
+// Blends upsampled small mip with the larger mip at this resolution
+
+#include "/Engine/Public/Platform.ush"
+
+Texture2D    InputTexture;   // smaller mip to upsample
+SamplerState InputSampler;
+Texture2D    BlendTexture;   // larger mip at output resolution
+SamplerState BlendSampler;
+RWTexture2D<float4> OutputTexture;
+
+uint2  OutputSize;
+float2 TexelSize;    // 1.0 / InputTextureSize (the smaller mip)
+float  BlendWeight;  // per-level contribution weight (additive accumulation)
+
+[numthreads(16, 16, 1)]
+void MainCS(uint3 DTid : SV_DispatchThreadID)
+{
+	if (DTid.x >= OutputSize.x || DTid.y >= OutputSize.y) return;
+
+	float2 UV = (float2(DTid.xy) + 0.5f) / float2(OutputSize);
+
+	// Dual Kawase upsample: 4 diagonal (weight 2 each) + 4 cardinal (weight 1 each)
+	float4 Sum = float4(0, 0, 0, 0);
+	Sum += InputTexture.SampleLevel(InputSampler, UV + float2(-TexelSize.x, -TexelSize.y), 0) * 2.0f;
+	Sum += InputTexture.SampleLevel(InputSampler, UV + float2( TexelSize.x, -TexelSize.y), 0) * 2.0f;
+	Sum += InputTexture.SampleLevel(InputSampler, UV + float2(-TexelSize.x,  TexelSize.y), 0) * 2.0f;
+	Sum += InputTexture.SampleLevel(InputSampler, UV + float2( TexelSize.x,  TexelSize.y), 0) * 2.0f;
+
+	Sum += InputTexture.SampleLevel(InputSampler, UV + float2(-TexelSize.x * 2.0f, 0), 0);
+	Sum += InputTexture.SampleLevel(InputSampler, UV + float2( TexelSize.x * 2.0f, 0), 0);
+	Sum += InputTexture.SampleLevel(InputSampler, UV + float2(0, -TexelSize.y * 2.0f), 0);
+	Sum += InputTexture.SampleLevel(InputSampler, UV + float2(0,  TexelSize.y * 2.0f), 0);
+	Sum /= 12.0f;
+
+	float4 BlendColor = BlendTexture.SampleLevel(BlendSampler, UV, 0);
+
+	float4 Result = Sum + BlendColor * BlendWeight;
+	OutputTexture[DTid.xy] = float4(Result.rgb, 1.0f);
+}

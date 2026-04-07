@@ -90,6 +90,9 @@ private:
 	/** 构建 AI 调色区域 */
 	TSharedRef<SWidget> BuildAIGradingArea();
 
+	/** 构建 Custom Bloom 设置区域 */
+	TSharedRef<SWidget> BuildCustomBloomArea();
+
 	// --- UI 更新 ---
 
 	/** 获取实时按钮文字 */
@@ -129,6 +132,7 @@ private:
 	bool bScopesVisible = true;
 	bool bGalleryVisible = true;
 	bool bAIGradingVisible = true;
+	bool bBloomVisible = true;
 
 	// --- 分辨率预设 ---
 

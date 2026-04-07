@@ -1,0 +1,36 @@
+// Custom Bloom — Final Composite (compute shader)
+// Output = SceneColor + SceneBloom * SceneIntensity * Tint
+//                      + VFXBloom  * VFXIntensity   * Tint
+
+#include "/Engine/Public/Platform.ush"
+
+Texture2D    SceneColorTex;
+SamplerState SceneColorSampler;
+Texture2D    SceneBloomTex;
+SamplerState SceneBloomSampler;
+Texture2D    VFXBloomTex;
+SamplerState VFXBloomSampler;
+RWTexture2D<float4> OutputTexture;
+
+uint2  OutputSize;
+float  SceneBloomIntensity;
+float  VFXBloomIntensity;
+float3 BloomTint;
+
+[numthreads(16, 16, 1)]
+void MainCS(uint3 DTid : SV_DispatchThreadID)
+{
+	if (DTid.x >= OutputSize.x || DTid.y >= OutputSize.y) return;
+
+	float2 UV = (float2(DTid.xy) + 0.5f) / float2(OutputSize);
+
+	float3 Scene = SceneColorTex.SampleLevel(SceneColorSampler, UV, 0).rgb;
+	float3 SBloom = SceneBloomTex.SampleLevel(SceneBloomSampler, UV, 0).rgb;
+	float3 VBloom = VFXBloomTex.SampleLevel(VFXBloomSampler, UV, 0).rgb;
+
+	float3 Result = Scene
+		+ SBloom * SceneBloomIntensity * BloomTint
+		+ VBloom * VFXBloomIntensity   * BloomTint;
+
+	OutputTexture[DTid.xy] = float4(Result, 1.0f);
+}

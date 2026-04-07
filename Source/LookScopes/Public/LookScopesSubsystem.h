@@ -12,6 +12,7 @@
 class SLookMatchPanel;
 class FScopeSessionManager;
 class FViewportStreamer;
+class FCustomBloomViewExtension;
 
 /**
  * ULookScopesSubsystem - 编辑器子系统
@@ -68,6 +69,14 @@ public:
 
 	/** 自定义 Bloom 控制 */
 	void SetCustomBloomEnabled(bool bEnabled);
+	bool IsCustomBloomEnabled() const;
+	void SetSceneBloomIntensity(float V);
+	void SetSceneBloomThreshold(float V);
+	void SetVFXBloomIntensity(float V);
+	void SetVFXBloomThreshold(float V);
+	void SetBloomLevels(int32 V);
+	void SetBloomScatter(float V);
+	void SetMaxBrightness(float V);
 
 private:
 	/** 注册 Tab Spawner */
@@ -106,6 +115,9 @@ private:
 
 	/** AI 调色器 */
 	TUniquePtr<FAIColorGrader> AIColorGrader;
+
+	/** 自定义 Bloom ViewExtension（独立于 AI 调色） */
+	TSharedPtr<FCustomBloomViewExtension, ESPMode::ThreadSafe> BloomViewExtension;
 
 	/** Tab ID */
 	static const FName ScopeTabId;

@@ -7,7 +7,8 @@
 #include "ScopeAnalyzer.h"
 #include "ViewportStreamer.h"
 #include "AIColorGrader.h"
-#include "AIGradingViewExtension.h"
+#include "CustomBloomViewExtension.h"
+#include "SceneViewExtension.h"
 #include "Widgets/Docking/SDockTab.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Text/STextBlock.h"
@@ -32,6 +33,76 @@ static FAutoConsoleCommand CmdCustomBloom(
 		const bool bEnable = Args.Num() > 0 ? FCString::Atoi(*Args[0]) != 0 : true;
 		Sub->SetCustomBloomEnabled(bEnable);
 		UE_LOG(LogTemp, Log, TEXT("Custom Bloom: %s"), bEnable ? TEXT("ON") : TEXT("OFF"));
+	}));
+
+static FAutoConsoleCommand CmdBloomSceneIntensity(
+	TEXT("LookScopes.Bloom.SceneIntensity"),
+	TEXT("Set scene bloom intensity (float)"),
+	FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+	{
+		if (!GEditor || Args.Num() == 0) return;
+		if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+			Sub->SetSceneBloomIntensity(FCString::Atof(*Args[0]));
+	}));
+
+static FAutoConsoleCommand CmdBloomSceneThreshold(
+	TEXT("LookScopes.Bloom.SceneThreshold"),
+	TEXT("Set scene bloom threshold (float, HDR units)"),
+	FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+	{
+		if (!GEditor || Args.Num() == 0) return;
+		if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+			Sub->SetSceneBloomThreshold(FCString::Atof(*Args[0]));
+	}));
+
+static FAutoConsoleCommand CmdBloomVFXIntensity(
+	TEXT("LookScopes.Bloom.VFXIntensity"),
+	TEXT("Set VFX bloom intensity (float)"),
+	FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+	{
+		if (!GEditor || Args.Num() == 0) return;
+		if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+			Sub->SetVFXBloomIntensity(FCString::Atof(*Args[0]));
+	}));
+
+static FAutoConsoleCommand CmdBloomVFXThreshold(
+	TEXT("LookScopes.Bloom.VFXThreshold"),
+	TEXT("Set VFX bloom threshold (float, HDR units)"),
+	FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+	{
+		if (!GEditor || Args.Num() == 0) return;
+		if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+			Sub->SetVFXBloomThreshold(FCString::Atof(*Args[0]));
+	}));
+
+static FAutoConsoleCommand CmdBloomLevels(
+	TEXT("LookScopes.Bloom.Levels"),
+	TEXT("Set bloom downsample levels (int, 3-6)"),
+	FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+	{
+		if (!GEditor || Args.Num() == 0) return;
+		if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+			Sub->SetBloomLevels(FCString::Atoi(*Args[0]));
+	}));
+
+static FAutoConsoleCommand CmdBloomScatter(
+	TEXT("LookScopes.Bloom.Scatter"),
+	TEXT("Set bloom scatter (float, 0-1). 0=tight glow, 1=wide halo"),
+	FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+	{
+		if (!GEditor || Args.Num() == 0) return;
+		if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+			Sub->SetBloomScatter(FCString::Atof(*Args[0]));
+	}));
+
+static FAutoConsoleCommand CmdBloomMaxBrightness(
+	TEXT("LookScopes.Bloom.MaxBrightness"),
+	TEXT("Clamp bloom HDR peaks (float, 0=off). Prevents specular flicker"),
+	FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+	{
+		if (!GEditor || Args.Num() == 0) return;
+		if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+			Sub->SetMaxBrightness(FCString::Atof(*Args[0]));
 	}));
 
 // ============================================================
@@ -80,6 +151,8 @@ void ULookScopesSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	RegisterTabSpawner();
 	RegisterMenus();
 
+	BloomViewExtension = FSceneViewExtensions::NewExtension<FCustomBloomViewExtension>();
+
 UE_LOG(LogTemp, Log, TEXT("LookScopes: Subsystem 已初始化"));
 }
 
@@ -117,6 +190,13 @@ void ULookScopesSubsystem::Deinitialize()
 	{
 		ViewportStreamer->StopStreaming();
 		ViewportStreamer.Reset();
+	}
+
+	// 释放 Bloom ViewExtension
+	if (BloomViewExtension.IsValid())
+	{
+		BloomViewExtension->SetEnabled(false);
+		BloomViewExtension.Reset();
 	}
 
 	// 销毁 SessionManager（会自动停止实时模式、清理分析器）
@@ -359,13 +439,50 @@ FAIColorGrader* ULookScopesSubsystem::GetAIColorGrader() const
 
 void ULookScopesSubsystem::SetCustomBloomEnabled(bool bEnabled)
 {
-	if (AIColorGrader.IsValid())
+	if (BloomViewExtension.IsValid())
 	{
-		if (auto VE = AIColorGrader->GetViewExtension())
-		{
-			VE->SetCustomBloomEnabled(bEnabled);
-		}
+		BloomViewExtension->SetEnabled(bEnabled);
 	}
+}
+
+bool ULookScopesSubsystem::IsCustomBloomEnabled() const
+{
+	return BloomViewExtension.IsValid() && BloomViewExtension->IsEnabled();
+}
+
+void ULookScopesSubsystem::SetSceneBloomIntensity(float V)
+{
+	if (BloomViewExtension.IsValid()) BloomViewExtension->SetSceneBloomIntensity(V);
+}
+
+void ULookScopesSubsystem::SetSceneBloomThreshold(float V)
+{
+	if (BloomViewExtension.IsValid()) BloomViewExtension->SetSceneBloomThreshold(V);
+}
+
+void ULookScopesSubsystem::SetVFXBloomIntensity(float V)
+{
+	if (BloomViewExtension.IsValid()) BloomViewExtension->SetVFXBloomIntensity(V);
+}
+
+void ULookScopesSubsystem::SetVFXBloomThreshold(float V)
+{
+	if (BloomViewExtension.IsValid()) BloomViewExtension->SetVFXBloomThreshold(V);
+}
+
+void ULookScopesSubsystem::SetBloomLevels(int32 V)
+{
+	if (BloomViewExtension.IsValid()) BloomViewExtension->SetBloomLevels(V);
+}
+
+void ULookScopesSubsystem::SetBloomScatter(float V)
+{
+	if (BloomViewExtension.IsValid()) BloomViewExtension->SetBloomScatter(V);
+}
+
+void ULookScopesSubsystem::SetMaxBrightness(float V)
+{
+	if (BloomViewExtension.IsValid()) BloomViewExtension->SetMaxBrightness(V);
 }
 
 // ============================================================

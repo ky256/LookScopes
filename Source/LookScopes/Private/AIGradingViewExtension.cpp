@@ -8,8 +8,6 @@
 #include "RenderGraphUtils.h"
 #include "ScreenPass.h"
 #include "PostProcess/PostProcessMaterialInputs.h"
-#include "PostProcess/PostProcessInputs.h"
-#include "TranslucentPassResource.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAICapture, Verbose, All);
 
@@ -25,13 +23,6 @@ FAIGradingViewExtension::FAIGradingViewExtension(const FAutoRegister& AutoRegist
 void FAIGradingViewExtension::SetupView(FSceneViewFamily& InViewFamily, FSceneView& InView)
 {
 	if (InView.bIsSceneCapture) return;
-
-	if (bCustomBloomEnabled)
-	{
-		InView.FinalPostProcessSettings.BloomIntensity = 0.0f;
-		InViewFamily.EngineShowFlags.SetBloom(false);
-	}
-
 	if (!bEnabled || !CurrentLUT) return;
 
 	// Micro-jitter the weight when LUT data has been updated.
@@ -52,7 +43,7 @@ void FAIGradingViewExtension::SetupView(FSceneViewFamily& InViewFamily, FSceneVi
 
 bool FAIGradingViewExtension::IsActiveThisFrame_Internal(const FSceneViewExtensionContext& Context) const
 {
-	return bEnabled || bCustomBloomEnabled || bCaptureRequested.load();
+	return bEnabled || bCaptureRequested.load();
 }
 
 // ============================================================
@@ -254,53 +245,6 @@ void FAIGradingViewExtension::PostRenderViewFamily_RenderThread(
 	FRDGBuilder& GraphBuilder,
 	FSceneViewFamily& InViewFamily)
 {
-}
-
-// ============================================================
-// 游戏线程：收集捕获结果
-// ============================================================
-
-// ============================================================
-// PrePostProcessPass — 自定义 Bloom（早于引擎 Bloom）
-// ============================================================
-
-DEFINE_LOG_CATEGORY_STATIC(LogCustomBloom, Log, All);
-
-void FAIGradingViewExtension::PrePostProcessPass_RenderThread(
-	FRDGBuilder& GraphBuilder,
-	const FSceneView& InView,
-	const FPostProcessingInputs& Inputs)
-{
-	if (!bCustomBloomEnabled) return;
-	if (InView.bIsSceneCapture) return;
-
-	FRDGTextureRef SceneColor = (*Inputs.SceneTextures)->SceneColorTexture;
-	if (!SceneColor)
-	{
-		UE_LOG(LogCustomBloom, Warning, TEXT("SceneColor is null"));
-		return;
-	}
-
-	const FIntPoint SceneExtent = SceneColor->Desc.Extent;
-
-	const auto& AfterDOF = Inputs.TranslucencyViewResourcesMap.Get(ETranslucencyPass::TPT_TranslucencyAfterDOF);
-	FRDGTextureRef TranslucentColor = AfterDOF.GetColorForRead(GraphBuilder);
-	const bool bHasTranslucency = TranslucentColor != nullptr;
-	const FIntPoint TransExtent = bHasTranslucency ? TranslucentColor->Desc.Extent : FIntPoint::ZeroValue;
-
-	static int32 LogCount = 0;
-	if (LogCount < 3)
-	{
-		LogCount++;
-		UE_LOG(LogCustomBloom, Log,
-			TEXT("PrePostProcessPass OK | SceneColor=%dx%d fmt=%d | Translucent=%s %dx%d | ViewRect=%d,%d→%d,%d"),
-			SceneExtent.X, SceneExtent.Y,
-			static_cast<int32>(SceneColor->Desc.Format),
-			bHasTranslucency ? TEXT("YES") : TEXT("NO"),
-			TransExtent.X, TransExtent.Y,
-			InView.UnscaledViewRect.Min.X, InView.UnscaledViewRect.Min.Y,
-			InView.UnscaledViewRect.Max.X, InView.UnscaledViewRect.Max.Y);
-	}
 }
 
 // ============================================================
