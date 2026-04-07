@@ -8,6 +8,8 @@ SamplerState InputSampler;
 RWTexture2D<float4> OutputTexture;
 uint2 OutputSize;
 float ExposureScale; // 0 = passthrough (LDR input), >0 = apply ACES tonemap + sRGB gamma
+float2 UVOffset;     // Top-left UV of the source viewport rect
+float2 UVScale;      // UV extent of the source viewport rect
 
 float3 ACESFilm(float3 x)
 {
@@ -34,7 +36,7 @@ void MainCS(uint3 DTid : SV_DispatchThreadID)
 {
 	if (DTid.x >= OutputSize.x || DTid.y >= OutputSize.y) return;
 
-	float2 UV = (float2(DTid.xy) + 0.5f) / float2(OutputSize);
+	float2 UV = UVOffset + ((float2(DTid.xy) + 0.5f) / float2(OutputSize)) * UVScale;
 	float4 Color = InputTexture.SampleLevel(InputSampler, UV, 0);
 
 	if (ExposureScale > 0.0f)

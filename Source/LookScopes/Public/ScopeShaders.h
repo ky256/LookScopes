@@ -132,7 +132,9 @@ class FAIDownsampleCS : public FGlobalShader
 		SHADER_PARAMETER_SAMPLER(SamplerState, InputSampler)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, OutputTexture)
 		SHADER_PARAMETER(FUintVector2, OutputSize)
-		SHADER_PARAMETER(float, ExposureScale) // 0 = passthrough, >0 = HDR→sRGB (ACES + gamma)
+		SHADER_PARAMETER(float, ExposureScale)
+		SHADER_PARAMETER(FVector2f, UVOffset)
+		SHADER_PARAMETER(FVector2f, UVScale)
 	END_SHADER_PARAMETER_STRUCT()
 
 	static constexpr int32 ThreadGroupSize = 16;
