@@ -21,12 +21,16 @@ public:
 	virtual void SubscribeToPostProcessingPass(EPostProcessingPass Pass, const FSceneView& InView,
 		FPostProcessingPassDelegateArray& InOutPassCallbacks, bool bIsPassEnabled) override;
 	virtual void PostRenderViewFamily_RenderThread(FRDGBuilder& GraphBuilder, FSceneViewFamily& InViewFamily) override;
+	virtual void PrePostProcessPass_RenderThread(FRDGBuilder& GraphBuilder, const FSceneView& InView, const FPostProcessingInputs& Inputs) override;
 	virtual bool IsActiveThisFrame_Internal(const FSceneViewExtensionContext& Context) const override;
 
 	// --- LUT 控制 (Game Thread) ---
 
 	void SetEnabled(bool bInEnabled) { bEnabled = bInEnabled; }
 	bool IsEnabled() const { return bEnabled; }
+
+	void SetCustomBloomEnabled(bool bIn) { bCustomBloomEnabled = bIn; }
+	bool IsCustomBloomEnabled() const { return bCustomBloomEnabled; }
 
 	void SetIntensity(float InIntensity) { Intensity = FMath::Clamp(InIntensity, 0.0f, 1.0f); }
 	float GetIntensity() const { return Intensity; }
@@ -53,6 +57,7 @@ public:
 
 private:
 	bool bEnabled = false;
+	bool bCustomBloomEnabled = false;
 	float Intensity = 1.0f;
 	UTexture* CurrentLUT = nullptr;
 

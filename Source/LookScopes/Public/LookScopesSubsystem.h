@@ -66,6 +66,9 @@ public:
 	void TriggerAIInferOnce();
 	FAIColorGrader* GetAIColorGrader() const;
 
+	/** 自定义 Bloom 控制 */
+	void SetCustomBloomEnabled(bool bEnabled);
+
 private:
 	/** 注册 Tab Spawner */
 	void RegisterTabSpawner();

@@ -7,6 +7,7 @@
 #include "ScopeAnalyzer.h"
 #include "ViewportStreamer.h"
 #include "AIColorGrader.h"
+#include "AIGradingViewExtension.h"
 #include "Widgets/Docking/SDockTab.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Text/STextBlock.h"
@@ -19,6 +20,19 @@
 #include "LevelEditorViewport.h"
 
 #define LOCTEXT_NAMESPACE "LookScopesSubsystem"
+
+static FAutoConsoleCommand CmdCustomBloom(
+	TEXT("LookScopes.CustomBloom"),
+	TEXT("Toggle custom bloom (0=off, 1=on)"),
+	FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+	{
+		if (!GEditor) return;
+		auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>();
+		if (!Sub) return;
+		const bool bEnable = Args.Num() > 0 ? FCString::Atoi(*Args[0]) != 0 : true;
+		Sub->SetCustomBloomEnabled(bEnable);
+		UE_LOG(LogTemp, Log, TEXT("Custom Bloom: %s"), bEnable ? TEXT("ON") : TEXT("OFF"));
+	}));
 
 // ============================================================
 // 全局输入处理器 - 拦截快捷键
@@ -341,6 +355,17 @@ void ULookScopesSubsystem::TriggerAIInferOnce()
 FAIColorGrader* ULookScopesSubsystem::GetAIColorGrader() const
 {
 	return AIColorGrader.Get();
+}
+
+void ULookScopesSubsystem::SetCustomBloomEnabled(bool bEnabled)
+{
+	if (AIColorGrader.IsValid())
+	{
+		if (auto VE = AIColorGrader->GetViewExtension())
+		{
+			VE->SetCustomBloomEnabled(bEnabled);
+		}
+	}
 }
 
 // ============================================================

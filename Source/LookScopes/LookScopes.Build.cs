@@ -1,12 +1,16 @@
 // Copyright KuoYu. All Rights Reserved.
 
 using UnrealBuildTool;
+using System.IO;
 
 public class LookScopes : ModuleRules
 {
 	public LookScopes(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
+
+		string EngineDir = Path.GetFullPath(Target.RelativeEnginePath);
+		PrivateIncludePaths.Add(Path.Combine(EngineDir, "Source", "Runtime", "Renderer", "Internal"));
 
 		PublicDependencyModuleNames.AddRange(
 			new string[]
