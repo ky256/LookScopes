@@ -1143,7 +1143,7 @@ TSharedRef<SWidget> SLookMatchPanel::BuildAIGradingArea()
 						]
 					]
 
-					// EMA 平滑
+					// 过渡时间
 					+ SVerticalBox::Slot()
 					.AutoHeight()
 					.Padding(0.0f, 2.0f)
@@ -1159,7 +1159,7 @@ TSharedRef<SWidget> SLookMatchPanel::BuildAIGradingArea()
 							.WidthOverride(60.0f)
 							[
 								SNew(STextBlock)
-								.Text(LOCTEXT("AISmooth", "平滑"))
+								.Text(LOCTEXT("AITransition", "过渡"))
 								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 								.ColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f)))
 							]
@@ -1170,14 +1170,15 @@ TSharedRef<SWidget> SLookMatchPanel::BuildAIGradingArea()
 						.VAlign(VAlign_Center)
 						[
 							SNew(SSpinBox<float>)
-							.MinValue(0.01f)
-							.MaxValue(1.0f)
-							.Value(0.15f)
+							.MinValue(0.05f)
+							.MaxValue(3.0f)
+							.Value(0.3f)
 							.Delta(0.05f)
+							.ToolTipText(LOCTEXT("AITransitionTip", "过渡时间 (秒)，越大越平滑"))
 							.OnValueChanged_Lambda([](float Val)
 							{
 								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
-									Sub->SetAIGradingSmoothFactor(Val);
+									Sub->SetAIGradingTransitionTime(Val);
 							})
 						]
 					]

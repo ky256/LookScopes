@@ -1,4 +1,5 @@
 // AI Color Grading — GPU bilinear downsample to 256x256
+// Supports HDR→sRGB conversion when ExposureScale > 0
 
 #include "/Engine/Public/Platform.ush"
 
@@ -6,6 +7,27 @@ Texture2D    InputTexture;
 SamplerState InputSampler;
 RWTexture2D<float4> OutputTexture;
 uint2 OutputSize;
+float ExposureScale; // 0 = passthrough (LDR input), >0 = apply ACES tonemap + sRGB gamma
+
+float3 ACESFilm(float3 x)
+{
+	float a = 2.51f;
+	float b = 0.03f;
+	float c = 2.43f;
+	float d = 0.59f;
+	float e = 0.14f;
+	return saturate((x * (a * x + b)) / (x * (c * x + d) + e));
+}
+
+float3 LinearToSRGB(float3 c)
+{
+	float3 lo = c * 12.92f;
+	float3 hi = 1.055f * pow(max(c, 0.00001f), 1.0f / 2.4f) - 0.055f;
+	return float3(
+		c.r <= 0.0031308f ? lo.r : hi.r,
+		c.g <= 0.0031308f ? lo.g : hi.g,
+		c.b <= 0.0031308f ? lo.b : hi.b);
+}
 
 [numthreads(16, 16, 1)]
 void MainCS(uint3 DTid : SV_DispatchThreadID)
@@ -14,5 +36,13 @@ void MainCS(uint3 DTid : SV_DispatchThreadID)
 
 	float2 UV = (float2(DTid.xy) + 0.5f) / float2(OutputSize);
 	float4 Color = InputTexture.SampleLevel(InputSampler, UV, 0);
-	OutputTexture[DTid.xy] = Color;
+
+	if (ExposureScale > 0.0f)
+	{
+		Color.rgb = Color.rgb * ExposureScale;
+		Color.rgb = ACESFilm(Color.rgb);
+		Color.rgb = LinearToSRGB(Color.rgb);
+	}
+
+	OutputTexture[DTid.xy] = float4(Color.rgb, 1.0f);
 }

@@ -23,7 +23,7 @@ namespace UE::NNE
  * FAIColorGrader - AI 推理管理器
  *
  * 完整管线:
- *   视口捕获 → 预处理(NCHW) → NNE ONNX 推理 → EMA 平滑 → UVolumeTexture → ViewExtension 注入
+ *   视口捕获 → 预处理(NCHW) → NNE ONNX 推理 → 每帧指数衰减平滑 → UTexture2D → ViewExtension 注入
  *
  * 生命周期由 ULookScopesSubsystem 管理。
  */
@@ -64,9 +64,9 @@ public:
 	void SetIntensity(float InIntensity);
 	float GetIntensity() const { return Intensity; }
 
-	/** EMA 平滑系数 [0, 1]，越大越跟手，越小越平滑 */
-	void SetSmoothingFactor(float Alpha);
-	float GetSmoothingFactor() const { return SmoothingAlpha; }
+	/** 过渡时间 (秒)，越大过渡越平滑，越小越跟手 */
+	void SetTransitionTime(float Seconds);
+	float GetTransitionTime() const { return TransitionTime; }
 
 	// --- 手动触发 ---
 
@@ -125,7 +125,9 @@ private:
 
 	// --- LUT 数据 (CPU) ---
 	TArray<float> SmoothedLUT;
+	TArray<float> TargetLUT;
 	bool bFirstLUT = true;
+	bool bHasTarget = false;
 
 	// --- 异步推理 ---
 	std::atomic<bool> bInferenceInFlight{false};
@@ -143,6 +145,6 @@ private:
 	float TimeSinceLastInference = 0.0f;
 	float LastInferenceTimeMs = 0.0f;
 	float Intensity = 1.0f;
-	float SmoothingAlpha = 0.15f;
+	float TransitionTime = 0.3f;
 	int32 TotalInferenceCount = 0;
 };

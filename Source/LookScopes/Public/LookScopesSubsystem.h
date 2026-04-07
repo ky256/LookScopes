@@ -62,7 +62,7 @@ public:
 	bool IsAIGradingEnabled() const;
 	void SetAIGradingIntensity(float Intensity);
 	void SetAIGradingInterval(float Seconds);
-	void SetAIGradingSmoothFactor(float Alpha);
+	void SetAIGradingTransitionTime(float Seconds);
 	void TriggerAIInferOnce();
 	FAIColorGrader* GetAIColorGrader() const;
 

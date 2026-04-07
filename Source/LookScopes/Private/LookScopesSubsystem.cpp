@@ -322,11 +322,11 @@ void ULookScopesSubsystem::SetAIGradingInterval(float Seconds)
 	}
 }
 
-void ULookScopesSubsystem::SetAIGradingSmoothFactor(float Alpha)
+void ULookScopesSubsystem::SetAIGradingTransitionTime(float Seconds)
 {
 	if (AIColorGrader.IsValid())
 	{
-		AIColorGrader->SetSmoothingFactor(Alpha);
+		AIColorGrader->SetTransitionTime(Seconds);
 	}
 }
 

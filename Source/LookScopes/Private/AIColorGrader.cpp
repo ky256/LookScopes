@@ -25,6 +25,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogAIGrader, Log, All);
 FAIColorGrader::FAIColorGrader()
 {
 	SmoothedLUT.SetNumZeroed(MODEL_LUT_FLOATS);
+	TargetLUT.SetNumZeroed(MODEL_LUT_FLOATS);
 }
 
 FAIColorGrader::~FAIColorGrader()
@@ -361,6 +362,11 @@ void FAIColorGrader::UpdateLUTTexture()
 				256 * sizeof(FColor),
 				reinterpret_cast<const uint8*>(Data.GetData()));
 		});
+
+	if (ViewExtension.IsValid())
+	{
+		ViewExtension->MarkLUTDirty();
+	}
 }
 
 void FAIColorGrader::WriteIdentityLUT()
@@ -405,8 +411,12 @@ void FAIColorGrader::SetEnabled(bool bInEnabled)
 
 	if (bInEnabled && bModelLoaded)
 	{
-		InferOnce();
+		bFirstLUT = true;
 		TimeSinceLastInference = 0.0f;
+		if (ViewExtension.IsValid())
+		{
+			ViewExtension->RequestFrameCapture();
+		}
 	}
 }
 
@@ -424,9 +434,9 @@ void FAIColorGrader::SetIntensity(float InIntensity)
 	}
 }
 
-void FAIColorGrader::SetSmoothingFactor(float Alpha)
+void FAIColorGrader::SetTransitionTime(float Seconds)
 {
-	SmoothingAlpha = FMath::Clamp(Alpha, 0.0f, 1.0f);
+	TransitionTime = FMath::Max(0.01f, Seconds);
 }
 
 // ============================================================
@@ -488,18 +498,19 @@ void FAIColorGrader::ApplyAndUpdateLUT(const TArray<float>& RawLUT)
 	if (bFirstLUT)
 	{
 		FMemory::Memcpy(SmoothedLUT.GetData(), RawLUT.GetData(), MODEL_LUT_FLOATS * sizeof(float));
+		FMemory::Memcpy(TargetLUT.GetData(), RawLUT.GetData(), MODEL_LUT_FLOATS * sizeof(float));
 		bFirstLUT = false;
-	}
-	else
-	{
-		const float OneMinusAlpha = 1.0f - SmoothingAlpha;
-		for (int32 i = 0; i < MODEL_LUT_FLOATS; i++)
-		{
-			SmoothedLUT[i] = OneMinusAlpha * SmoothedLUT[i] + SmoothingAlpha * RawLUT[i];
-		}
+		bHasTarget = false;
+		UpdateLUTTexture();
+		return;
 	}
 
-	UpdateLUTTexture();
+	constexpr float TargetBlend = 0.5f;
+	for (int32 i = 0; i < MODEL_LUT_FLOATS; i++)
+	{
+		TargetLUT[i] += TargetBlend * (RawLUT[i] - TargetLUT[i]);
+	}
+	bHasTarget = true;
 }
 
 static void DownsamplePixels(const TArray<FColor>& Src, int32 SrcW, int32 SrcH,
@@ -625,6 +636,28 @@ bool FAIColorGrader::OnTick(float DeltaTime)
 {
 	if (!bEnabled || !bModelLoaded) return true;
 	if (!ViewExtension.IsValid()) return true;
+
+	// 0. 每帧平滑插值: SmoothedLUT → TargetLUT (指数衰减, 帧率无关)
+	if (bHasTarget)
+	{
+		const float Blend = 1.0f - FMath::Exp(-DeltaTime / TransitionTime);
+
+		float MaxDiff = 0.0f;
+		for (int32 i = 0; i < MODEL_LUT_FLOATS; i++)
+		{
+			SmoothedLUT[i] += Blend * (TargetLUT[i] - SmoothedLUT[i]);
+			MaxDiff = FMath::Max(MaxDiff, FMath::Abs(TargetLUT[i] - SmoothedLUT[i]));
+		}
+
+		constexpr float ConvergenceThreshold = 1.0f / 512.0f;
+		if (MaxDiff < ConvergenceThreshold)
+		{
+			FMemory::Memcpy(SmoothedLUT.GetData(), TargetLUT.GetData(), MODEL_LUT_FLOATS * sizeof(float));
+			bHasTarget = false;
+		}
+
+		UpdateLUTTexture();
+	}
 
 	// 1. 异步推理完成 → 取回结果应用到 LUT
 	if (!bInferenceInFlight.load())

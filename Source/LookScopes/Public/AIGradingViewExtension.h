@@ -4,8 +4,10 @@
 
 #include "CoreMinimal.h"
 #include "SceneViewExtension.h"
+#include "ScreenPass.h"
 
 class UTexture;
+struct FPostProcessMaterialInputs;
 
 class FAIGradingViewExtension : public FSceneViewExtensionBase
 {
@@ -16,6 +18,8 @@ public:
 	virtual void SetupViewFamily(FSceneViewFamily& InViewFamily) override {}
 	virtual void SetupView(FSceneViewFamily& InViewFamily, FSceneView& InView) override;
 	virtual void BeginRenderViewFamily(FSceneViewFamily& InViewFamily) override {}
+	virtual void SubscribeToPostProcessingPass(EPostProcessingPass Pass, const FSceneView& InView,
+		FPostProcessingPassDelegateArray& InOutPassCallbacks, bool bIsPassEnabled) override;
 	virtual void PostRenderViewFamily_RenderThread(FRDGBuilder& GraphBuilder, FSceneViewFamily& InViewFamily) override;
 	virtual bool IsActiveThisFrame_Internal(const FSceneViewExtensionContext& Context) const override;
 
@@ -29,7 +33,10 @@ public:
 
 	void SetLUTTexture(UTexture* InLUT) { CurrentLUT = InLUT; }
 
-	// --- 异步帧捕获 (渲染线程内 ReadSurfaceData，零游戏线程阻塞) ---
+	/** Called after LUT texture data is updated to invalidate CombineLUTs cache */
+	void MarkLUTDirty() { LUTUpdateCounter.fetch_add(1); }
+
+	// --- 异步帧捕获 (在 tone mapping 之前捕获干净画面) ---
 
 	void RequestFrameCapture() { bCaptureRequested.store(true); }
 	bool IsCaptureReady() const { return bCaptureComplete.load(); }
@@ -48,6 +55,14 @@ private:
 	bool bEnabled = false;
 	float Intensity = 1.0f;
 	UTexture* CurrentLUT = nullptr;
+
+	// Pre-tonemap capture callback (registered via SubscribeToPostProcessingPass)
+	FScreenPassTexture OnPreTonemapCapture_RenderThread(
+		FRDGBuilder& GraphBuilder, const FSceneView& View, const FPostProcessMaterialInputs& Inputs);
+
+	// LUT cache invalidation — micro-jitters weight to bust CombineLUTs cache
+	std::atomic<uint32> LUTUpdateCounter{0};
+	uint32 LastAppliedLUTCounter = 0;
 
 	// --- 帧捕获 (跨线程通信) ---
 	std::atomic<bool> bCaptureRequested{false};
