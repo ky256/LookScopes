@@ -203,20 +203,27 @@ FScreenPassTexture FAIGradingViewExtension::OnPreTonemapCapture_RenderThread(
 
 			if (Pixels.Num() > 0)
 			{
-				uint64 SumR = 0, SumG = 0, SumB = 0;
-				uint8 MinV = 255, MaxV = 0;
-				for (const FColor& Px : Pixels)
+				static int32 CaptureLogCounter = 0;
+				CaptureLogCounter++;
+				const bool bDetailLog = (CaptureLogCounter <= 1) || (CaptureLogCounter % 100 == 0);
+
+				if (bDetailLog)
 				{
-					SumR += Px.R; SumG += Px.G; SumB += Px.B;
-					const uint8 Lum = FMath::Max3(Px.R, Px.G, Px.B);
-					MinV = FMath::Min(MinV, Lum);
-					MaxV = FMath::Max(MaxV, Lum);
+					uint64 SumR = 0, SumG = 0, SumB = 0;
+					uint8 MinV = 255, MaxV = 0;
+					for (const FColor& Px : Pixels)
+					{
+						SumR += Px.R; SumG += Px.G; SumB += Px.B;
+						const uint8 Lum = FMath::Max3(Px.R, Px.G, Px.B);
+						MinV = FMath::Min(MinV, Lum);
+						MaxV = FMath::Max(MaxV, Lum);
+					}
+					const int32 N = Pixels.Num();
+					UE_LOG(LogAICapture, Log, TEXT("捕获链 #%d: %s | 均值 R=%.1f G=%.1f B=%.1f | 范围 [%d, %d]"),
+						CaptureLogCounter, *Chain,
+						SumR / (double)N, SumG / (double)N, SumB / (double)N,
+						MinV, MaxV);
 				}
-				const int32 N = Pixels.Num();
-				UE_LOG(LogAICapture, Log, TEXT("捕获链: %s | 均值 R=%.1f G=%.1f B=%.1f | 范围 [%d, %d]"),
-					*Chain,
-					SumR / (double)N, SumG / (double)N, SumB / (double)N,
-					MinV, MaxV);
 
 				FScopeLock Lock(&CaptureLock);
 				CapturedPixels = MoveTemp(Pixels);

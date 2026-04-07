@@ -733,12 +733,18 @@ bool FAIColorGrader::OnTick(float DeltaTime)
 	}
 	else if (TimeSinceLastInference >= InferenceInterval * 5.0f)
 	{
-		UE_LOG(LogAIGrader, Warning,
-			TEXT("捕获停滞 %.1fs | pending=%d inFlight=%d captureReady=%d"),
-			TimeSinceLastInference,
-			ViewExtension->HasPendingCapture() ? 1 : 0,
-			bInferenceInFlight.load() ? 1 : 0,
-			ViewExtension->IsCaptureReady() ? 1 : 0);
+		static double LastStallLogTime = 0.0;
+		const double Now = FPlatformTime::Seconds();
+		if (Now - LastStallLogTime >= 2.0)
+		{
+			LastStallLogTime = Now;
+			UE_LOG(LogAIGrader, Warning,
+				TEXT("捕获停滞 %.1fs | pending=%d inFlight=%d captureReady=%d"),
+				TimeSinceLastInference,
+				ViewExtension->HasPendingCapture() ? 1 : 0,
+				bInferenceInFlight.load() ? 1 : 0,
+				ViewExtension->IsCaptureReady() ? 1 : 0);
+		}
 	}
 
 	return true;
