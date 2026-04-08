@@ -17,6 +17,8 @@ struct FCustomBloomParams
 	float Scatter = 0.4f;
 	float MaxBrightness = 10.0f;
 	FLinearColor BloomTint = FLinearColor::White;
+	int32 DebugMode = 0; // 0=normal, 1=bloom only, 2=VFX bloom
+	float TemporalWeight = 0.9f; // 0=no smoothing, higher=more stable (max ~0.95)
 };
 
 class FBloomRenderer
@@ -27,7 +29,8 @@ public:
 		FRDGTextureRef SceneColor,
 		FRDGTextureRef TranslucentColor,
 		const FIntRect& ViewRect,
-		const FCustomBloomParams& Params);
+		const FCustomBloomParams& Params,
+		TRefCountPtr<IPooledRenderTarget>& InOutSceneBloomHistory);
 
 private:
 	static constexpr int32 MaxBloomLevels = 6;
@@ -48,4 +51,10 @@ private:
 		const TArray<FRDGTextureRef>& Mips,
 		float Scatter,
 		const TCHAR* DebugPrefix);
+
+	FRDGTextureRef RunTemporalBlend(
+		FRDGBuilder& GraphBuilder,
+		FRDGTextureRef Current,
+		FRDGTextureRef History,
+		float Weight);
 };

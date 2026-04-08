@@ -77,6 +77,7 @@ public:
 	void SetBloomLevels(int32 V);
 	void SetBloomScatter(float V);
 	void SetMaxBrightness(float V);
+	void SetBloomDebugMode(int32 Mode);
 
 private:
 	/** 注册 Tab Spawner */

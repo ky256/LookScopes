@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "SceneViewExtension.h"
 #include "BloomRenderer.h"
+#include "RenderGraphResources.h"
 
 class FCustomBloomViewExtension : public FSceneViewExtensionBase
 {
@@ -33,9 +34,12 @@ public:
 	void SetBloomScatter(float V) { BloomParams.Scatter = FMath::Clamp(V, 0.0f, 1.0f); }
 	void SetMaxBrightness(float V) { BloomParams.MaxBrightness = FMath::Max(V, 0.0f); }
 	void SetBloomTint(const FLinearColor& C) { BloomParams.BloomTint = C; }
+	void SetTemporalWeight(float V) { BloomParams.TemporalWeight = FMath::Clamp(V, 0.0f, 0.98f); }
 
 private:
 	bool bEnabled = false;
 	FCustomBloomParams BloomParams;
 	FBloomRenderer BloomRenderer;
+
+	TRefCountPtr<IPooledRenderTarget> SceneBloomHistory;
 };

@@ -105,6 +105,20 @@ static FAutoConsoleCommand CmdBloomMaxBrightness(
 			Sub->SetMaxBrightness(FCString::Atof(*Args[0]));
 	}));
 
+static FAutoConsoleCommand CmdBloomDebug(
+	TEXT("LookScopes.Bloom.Debug"),
+	TEXT("Debug bloom output (0=normal, 1=bloom only, 2=VFX bloom only)"),
+	FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+	{
+		if (!GEditor) return;
+		if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+		{
+			const int32 Mode = Args.Num() > 0 ? FCString::Atoi(*Args[0]) : 0;
+			Sub->SetBloomDebugMode(Mode);
+			UE_LOG(LogTemp, Log, TEXT("Bloom Debug Mode: %d"), Mode);
+		}
+	}));
+
 // ============================================================
 // 全局输入处理器 - 拦截快捷键
 // ============================================================
@@ -483,6 +497,16 @@ void ULookScopesSubsystem::SetBloomScatter(float V)
 void ULookScopesSubsystem::SetMaxBrightness(float V)
 {
 	if (BloomViewExtension.IsValid()) BloomViewExtension->SetMaxBrightness(V);
+}
+
+void ULookScopesSubsystem::SetBloomDebugMode(int32 Mode)
+{
+	if (BloomViewExtension.IsValid())
+	{
+		FCustomBloomParams P = BloomViewExtension->GetBloomParams();
+		P.DebugMode = FMath::Clamp(Mode, 0, 2);
+		BloomViewExtension->SetBloomParams(P);
+	}
 }
 
 // ============================================================

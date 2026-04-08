@@ -2,9 +2,20 @@
 
 #include "CustomBloomViewExtension.h"
 #include "SceneView.h"
+#include "SceneInterface.h"
 #include "PostProcess/PostProcessInputs.h"
 #include "TranslucentPassResource.h"
 #include "RenderGraphBuilder.h"
+#include "RenderGraphUtils.h"
+#include "Engine/World.h"
+
+static bool IsMainEditorWorld(const FSceneViewFamily& ViewFamily)
+{
+	if (!ViewFamily.Scene) return false;
+	UWorld* World = ViewFamily.Scene->GetWorld();
+	if (!World) return false;
+	return World->WorldType == EWorldType::Editor || World->WorldType == EWorldType::PIE;
+}
 
 FCustomBloomViewExtension::FCustomBloomViewExtension(const FAutoRegister& AutoRegister)
 	: FSceneViewExtensionBase(AutoRegister)
@@ -15,6 +26,7 @@ void FCustomBloomViewExtension::SetupView(FSceneViewFamily& InViewFamily, FScene
 {
 	if (!bEnabled) return;
 	if (InView.bIsSceneCapture) return;
+	if (!IsMainEditorWorld(InViewFamily)) return;
 
 	InView.FinalPostProcessSettings.BloomIntensity = 0.0f;
 	InViewFamily.EngineShowFlags.SetBloom(false);
@@ -40,5 +52,5 @@ void FCustomBloomViewExtension::PrePostProcessPass_RenderThread(
 	FRDGTextureRef TranslucentColor = AfterDOF.GetColorForRead(GraphBuilder);
 
 	BloomRenderer.Render(GraphBuilder, SceneColor, TranslucentColor,
-		InView.UnscaledViewRect, BloomParams);
+		InView.UnscaledViewRect, BloomParams, SceneBloomHistory);
 }

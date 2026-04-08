@@ -72,6 +72,13 @@ IMPLEMENT_GLOBAL_SHADER(
 );
 
 IMPLEMENT_GLOBAL_SHADER(
+	FBloomTemporalBlendCS,
+	"/Plugin/LookScopes/BloomTemporalBlend.usf",
+	"MainCS",
+	SF_Compute
+);
+
+IMPLEMENT_GLOBAL_SHADER(
 	FBloomCompositeCS,
 	"/Plugin/LookScopes/BloomComposite.usf",
 	"MainCS",

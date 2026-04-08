@@ -1,0 +1,42 @@
+// Bloom temporal stabilisation with neighbourhood clamping.
+// Clamps history to the local AABB of the current frame before blending,
+// eliminating ghosting on moving objects while preserving flicker suppression.
+
+#include "/Engine/Public/Platform.ush"
+
+Texture2D    CurrentTex;
+SamplerState CurrentSampler;
+Texture2D    HistoryTex;
+SamplerState HistorySampler;
+RWTexture2D<float4> OutputTexture;
+
+uint2  OutputSize;
+float  BlendWeight; // 0 = fully current, 1 = fully history
+float2 TexelSize;   // 1.0 / OutputSize (current bloom resolution)
+
+[numthreads(16, 16, 1)]
+void MainCS(uint3 DTid : SV_DispatchThreadID)
+{
+	if (DTid.x >= OutputSize.x || DTid.y >= OutputSize.y) return;
+
+	float2 UV = (float2(DTid.xy) + 0.5f) / float2(OutputSize);
+
+	// Sample current frame: center + 4 cardinal neighbours
+	float3 c0 = CurrentTex.SampleLevel(CurrentSampler, UV, 0).rgb;
+	float3 c1 = CurrentTex.SampleLevel(CurrentSampler, UV + float2( TexelSize.x, 0.0f), 0).rgb;
+	float3 c2 = CurrentTex.SampleLevel(CurrentSampler, UV + float2(-TexelSize.x, 0.0f), 0).rgb;
+	float3 c3 = CurrentTex.SampleLevel(CurrentSampler, UV + float2(0.0f,  TexelSize.y), 0).rgb;
+	float3 c4 = CurrentTex.SampleLevel(CurrentSampler, UV + float2(0.0f, -TexelSize.y), 0).rgb;
+
+	// AABB of local neighbourhood
+	float3 boxMin = min(min(min(c0, c1), min(c2, c3)), c4);
+	float3 boxMax = max(max(max(c0, c1), max(c2, c3)), c4);
+
+	// Clamp history into the neighbourhood bounds
+	float3 History = HistoryTex.SampleLevel(HistorySampler, UV, 0).rgb;
+	History = clamp(History, boxMin, boxMax);
+
+	float3 Result = lerp(c0, History, BlendWeight);
+
+	OutputTexture[DTid.xy] = float4(Result, 1.0f);
+}

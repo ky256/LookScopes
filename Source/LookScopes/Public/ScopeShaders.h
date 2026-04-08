@@ -248,6 +248,34 @@ class FBloomUpsampleCS : public FGlobalShader
 };
 
 // ============================================================
+// Bloom Temporal Blend Compute Shader
+// ============================================================
+
+class FBloomTemporalBlendCS : public FGlobalShader
+{
+	DECLARE_GLOBAL_SHADER(FBloomTemporalBlendCS);
+	SHADER_USE_PARAMETER_STRUCT(FBloomTemporalBlendCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D, CurrentTex)
+		SHADER_PARAMETER_SAMPLER(SamplerState, CurrentSampler)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D, HistoryTex)
+		SHADER_PARAMETER_SAMPLER(SamplerState, HistorySampler)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, OutputTexture)
+		SHADER_PARAMETER(FUintVector2, OutputSize)
+		SHADER_PARAMETER(float, BlendWeight)
+		SHADER_PARAMETER(FVector2f, TexelSize)
+	END_SHADER_PARAMETER_STRUCT()
+
+	static constexpr int32 ThreadGroupSize = 16;
+
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
+	}
+};
+
+// ============================================================
 // Bloom Composite Compute Shader
 // ============================================================
 
@@ -268,6 +296,9 @@ class FBloomCompositeCS : public FGlobalShader
 		SHADER_PARAMETER(float, SceneBloomIntensity)
 		SHADER_PARAMETER(float, VFXBloomIntensity)
 		SHADER_PARAMETER(FVector3f, BloomTint)
+		SHADER_PARAMETER(FVector2f, BloomUVScale)
+		SHADER_PARAMETER(FVector2f, VFXBloomUVScale)
+		SHADER_PARAMETER(uint32, DebugMode)
 	END_SHADER_PARAMETER_STRUCT()
 
 	static constexpr int32 ThreadGroupSize = 16;

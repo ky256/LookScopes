@@ -1,6 +1,7 @@
-// Custom Bloom — Dual Kawase Downsample (compute shader)
-// 5-tap pattern: center*4 + 4 diagonal corners
-// First level applies soft-knee threshold when Threshold > 0
+// Custom Bloom — Downsample (compute shader)
+// First level: 13-tap Jimenez (2014) anti-flicker downsample with
+//   per-tap prefilter (clamp + soft threshold) and per-group Karis average.
+// Subsequent levels: 5-tap Dual Kawase.
 
 #include "/Engine/Public/Platform.ush"
 
@@ -10,17 +11,38 @@ RWTexture2D<float4> OutputTexture;
 
 uint2  OutputSize;
 float2 TexelSize;    // 1.0 / InputSize
-float  Threshold;    // 0 = no threshold (passthrough downsample)
-float  MaxBrightness; // clamp HDR peaks to prevent specular flicker
+float  Threshold;    // 0 = passthrough (subsequent levels)
+float  MaxBrightness;
 
-float3 SoftThreshold(float3 color, float threshold)
+static const float3 LumaW = float3(0.2126f, 0.7152f, 0.0722f);
+
+float3 Fetch(float2 uv)
 {
-	float brightness = dot(color, float3(0.2126f, 0.7152f, 0.0722f));
-	float knee = threshold * 0.5f;
-	float soft = brightness - threshold + knee;
+	return InputTexture.SampleLevel(InputSampler, uv, 0).rgb;
+}
+
+float KarisWeight(float3 c)
+{
+	return 1.0f / (1.0f + dot(c, LumaW));
+}
+
+float3 Prefilter(float3 color)
+{
+	// Clamp HDR peaks
+	if (MaxBrightness > 0.0f)
+	{
+		float lum = dot(color, LumaW);
+		if (lum > MaxBrightness)
+			color *= MaxBrightness / lum;
+	}
+
+	// Soft-knee threshold
+	float brightness = dot(color, LumaW);
+	float knee = Threshold * 0.5f;
+	float soft = brightness - Threshold + knee;
 	soft = clamp(soft, 0.0f, 2.0f * knee);
 	soft = soft * soft / (4.0f * knee + 1e-5f);
-	float contribution = max(soft, brightness - threshold) / max(brightness, 1e-5f);
+	float contribution = max(soft, brightness - Threshold) / max(brightness, 1e-5f);
 	return color * max(contribution, 0.0f);
 }
 
@@ -30,30 +52,68 @@ void MainCS(uint3 DTid : SV_DispatchThreadID)
 	if (DTid.x >= OutputSize.x || DTid.y >= OutputSize.y) return;
 
 	float2 UV = (float2(DTid.xy) + 0.5f) / float2(OutputSize);
-	float2 HalfTexel = TexelSize * 0.5f;
-
-	// Dual Kawase downsample: center*4 + 4 corners
-	float4 Sum  = InputTexture.SampleLevel(InputSampler, UV, 0) * 4.0f;
-	Sum += InputTexture.SampleLevel(InputSampler, UV + float2(-HalfTexel.x, -HalfTexel.y), 0);
-	Sum += InputTexture.SampleLevel(InputSampler, UV + float2( HalfTexel.x, -HalfTexel.y), 0);
-	Sum += InputTexture.SampleLevel(InputSampler, UV + float2(-HalfTexel.x,  HalfTexel.y), 0);
-	Sum += InputTexture.SampleLevel(InputSampler, UV + float2( HalfTexel.x,  HalfTexel.y), 0);
-	Sum *= 0.125f; // divide by 8
-
-	float3 Result = Sum.rgb;
+	float3 Result;
 
 	if (Threshold > 0.0f)
 	{
-		Result = SoftThreshold(Result, Threshold);
-	}
+		// ── 13-tap anti-flicker downsample (Jimenez 2014) ──
+		//
+		//  a . b . c       Groups (overlapping 2×2):
+		//  . d . e .       0 (center): d,e,i,j   base weight 0.500
+		//  f . g . h       1 (TL):     a,b,f,g   base weight 0.125
+		//  . i . j .       2 (TR):     b,c,g,h   base weight 0.125
+		//  k . l . m       3 (BL):     f,g,k,l   base weight 0.125
+		//                  4 (BR):     g,h,l,m   base weight 0.125
 
-	if (MaxBrightness > 0.0f)
+		float2 T = TexelSize;
+
+		// Outer ring (integer-texel offsets)
+		float3 sa = Prefilter(Fetch(UV + float2(-1.0f, -1.0f) * T));
+		float3 sb = Prefilter(Fetch(UV + float2( 0.0f, -1.0f) * T));
+		float3 sc = Prefilter(Fetch(UV + float2( 1.0f, -1.0f) * T));
+		float3 sf = Prefilter(Fetch(UV + float2(-1.0f,  0.0f) * T));
+		float3 sg = Prefilter(Fetch(UV));
+		float3 sh = Prefilter(Fetch(UV + float2( 1.0f,  0.0f) * T));
+		float3 sk = Prefilter(Fetch(UV + float2(-1.0f,  1.0f) * T));
+		float3 sl = Prefilter(Fetch(UV + float2( 0.0f,  1.0f) * T));
+		float3 sm = Prefilter(Fetch(UV + float2( 1.0f,  1.0f) * T));
+
+		// Inner diamond (half-texel offsets — bilinear averages the center 4 texels)
+		float3 sd = Prefilter(Fetch(UV + float2(-0.5f, -0.5f) * T));
+		float3 se = Prefilter(Fetch(UV + float2( 0.5f, -0.5f) * T));
+		float3 si = Prefilter(Fetch(UV + float2(-0.5f,  0.5f) * T));
+		float3 sj = Prefilter(Fetch(UV + float2( 0.5f,  0.5f) * T));
+
+		// Per-group average
+		float3 g0 = (sd + se + si + sj) * 0.25f;
+		float3 g1 = (sa + sb + sf + sg) * 0.25f;
+		float3 g2 = (sb + sc + sg + sh) * 0.25f;
+		float3 g3 = (sf + sg + sk + sl) * 0.25f;
+		float3 g4 = (sg + sh + sl + sm) * 0.25f;
+
+		// Per-group Karis weight × base weight
+		float w0 = KarisWeight(g0) * 0.500f;
+		float w1 = KarisWeight(g1) * 0.125f;
+		float w2 = KarisWeight(g2) * 0.125f;
+		float w3 = KarisWeight(g3) * 0.125f;
+		float w4 = KarisWeight(g4) * 0.125f;
+		float wTotal = w0 + w1 + w2 + w3 + w4;
+
+		Result = (g0 * w0 + g1 * w1 + g2 * w2 + g3 * w3 + g4 * w4)
+		       / max(wTotal, 1e-5f);
+	}
+	else
 	{
-		float lum = dot(Result, float3(0.2126f, 0.7152f, 0.0722f));
-		if (lum > MaxBrightness)
-		{
-			Result *= MaxBrightness / lum;
-		}
+		// ── Standard 5-tap Dual Kawase (subsequent levels) ──
+		float2 H = TexelSize * 0.5f;
+
+		float3 C  = Fetch(UV);
+		float3 TL = Fetch(UV + float2(-H.x, -H.y));
+		float3 TR = Fetch(UV + float2( H.x, -H.y));
+		float3 BL = Fetch(UV + float2(-H.x,  H.y));
+		float3 BR = Fetch(UV + float2( H.x,  H.y));
+
+		Result = (C * 4.0f + TL + TR + BL + BR) * 0.125f;
 	}
 
 	OutputTexture[DTid.xy] = float4(Result, 1.0f);

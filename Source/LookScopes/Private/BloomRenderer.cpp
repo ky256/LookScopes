@@ -10,21 +10,37 @@ void FBloomRenderer::Render(
 	FRDGTextureRef SceneColor,
 	FRDGTextureRef TranslucentColor,
 	const FIntRect& ViewRect,
-	const FCustomBloomParams& Params)
+	const FCustomBloomParams& Params,
+	TRefCountPtr<IPooledRenderTarget>& InOutSceneBloomHistory)
 {
 	if (!SceneColor) return;
 
 	const int32 Levels = FMath::Clamp(Params.BloomLevels, 3, MaxBloomLevels);
 	const FIntPoint SceneExtent = SceneColor->Desc.Extent;
 
-	// --- Scene Bloom Chain ---
+	// Scene bloom
 	TArray<FRDGTextureRef> SceneMips;
 	RunDownsampleChain(GraphBuilder, SceneColor, SceneExtent,
 		Params.SceneBloomThreshold, Params.MaxBrightness, Levels, TEXT("SceneBloom"), SceneMips);
-
 	FRDGTextureRef SceneBloom = RunUpsampleChain(GraphBuilder, SceneMips, Params.Scatter, TEXT("SceneBloomUp"));
 
-	// --- VFX Bloom Chain (skip if no translucent) ---
+	// Temporal stabilisation for scene bloom
+	const float TW = FMath::Clamp(Params.TemporalWeight, 0.0f, 0.98f);
+	if (TW > 0.0f && SceneBloom)
+	{
+		const FIntPoint BloomExtent = SceneBloom->Desc.Extent;
+
+		if (InOutSceneBloomHistory.IsValid() &&
+			InOutSceneBloomHistory->GetDesc().Extent == BloomExtent)
+		{
+			FRDGTextureRef History = GraphBuilder.RegisterExternalTexture(InOutSceneBloomHistory);
+			SceneBloom = RunTemporalBlend(GraphBuilder, SceneBloom, History, TW);
+		}
+
+		GraphBuilder.QueueTextureExtraction(SceneBloom, &InOutSceneBloomHistory);
+	}
+
+	// VFX (translucent) bloom
 	FRDGTextureRef VFXBloom = nullptr;
 	if (TranslucentColor)
 	{
@@ -35,7 +51,6 @@ void FBloomRenderer::Render(
 		VFXBloom = RunUpsampleChain(GraphBuilder, VFXMips, Params.Scatter, TEXT("VFXBloomUp"));
 	}
 
-	// If no VFX bloom, create a 1x1 black texture as placeholder
 	if (!VFXBloom)
 	{
 		VFXBloom = GraphBuilder.CreateTexture(
@@ -45,7 +60,7 @@ void FBloomRenderer::Render(
 		AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(VFXBloom), FLinearColor::Black);
 	}
 
-	// --- Composite: SceneColor + Bloom → TempOutput ---
+	// --- Composite ---
 	FRDGTextureRef CompositeOutput = GraphBuilder.CreateTexture(
 		FRDGTextureDesc::Create2D(SceneExtent, SceneColor->Desc.Format,
 			FClearValueBinding::Black, TexCreate_ShaderResource | TexCreate_UAV),
@@ -64,6 +79,9 @@ void FBloomRenderer::Render(
 	CompParams->SceneBloomIntensity = Params.SceneBloomIntensity;
 	CompParams->VFXBloomIntensity = Params.VFXBloomIntensity;
 	CompParams->BloomTint = FVector3f(Params.BloomTint.R, Params.BloomTint.G, Params.BloomTint.B);
+	CompParams->BloomUVScale = FVector2f(1.0f, 1.0f);
+	CompParams->VFXBloomUVScale = FVector2f(1.0f, 1.0f);
+	CompParams->DebugMode = static_cast<uint32>(FMath::Clamp(Params.DebugMode, 0, 2));
 
 	const int32 GX = FMath::DivideAndRoundUp(SceneExtent.X, ThreadGroupSize);
 	const int32 GY = FMath::DivideAndRoundUp(SceneExtent.Y, ThreadGroupSize);
@@ -71,9 +89,42 @@ void FBloomRenderer::Render(
 		RDG_EVENT_NAME("BloomComposite_%dx%d", SceneExtent.X, SceneExtent.Y),
 		CompositeShader, CompParams, FIntVector(GX, GY, 1));
 
-	// --- Copy result back to SceneColor ---
+	// Copy result back to SceneColor
 	AddCopyTexturePass(GraphBuilder, CompositeOutput, SceneColor,
 		FIntPoint::ZeroValue, FIntPoint::ZeroValue, SceneExtent);
+}
+
+FRDGTextureRef FBloomRenderer::RunTemporalBlend(
+	FRDGBuilder& GraphBuilder,
+	FRDGTextureRef Current,
+	FRDGTextureRef History,
+	float Weight)
+{
+	const FIntPoint Extent = Current->Desc.Extent;
+
+	FRDGTextureRef Output = GraphBuilder.CreateTexture(
+		FRDGTextureDesc::Create2D(Extent, PF_FloatRGBA,
+			FClearValueBinding::Black, TexCreate_ShaderResource | TexCreate_UAV),
+		TEXT("BloomTemporal"));
+
+	TShaderMapRef<FBloomTemporalBlendCS> Shader(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+	FBloomTemporalBlendCS::FParameters* P = GraphBuilder.AllocParameters<FBloomTemporalBlendCS::FParameters>();
+	P->CurrentTex = GraphBuilder.CreateSRV(FRDGTextureSRVDesc(Current));
+	P->CurrentSampler = TStaticSamplerState<SF_Bilinear, AM_Clamp, AM_Clamp>::GetRHI();
+	P->HistoryTex = GraphBuilder.CreateSRV(FRDGTextureSRVDesc(History));
+	P->HistorySampler = TStaticSamplerState<SF_Bilinear, AM_Clamp, AM_Clamp>::GetRHI();
+	P->OutputTexture = GraphBuilder.CreateUAV(Output);
+	P->OutputSize = FUintVector2(Extent.X, Extent.Y);
+	P->BlendWeight = Weight;
+	P->TexelSize = FVector2f(1.0f / Extent.X, 1.0f / Extent.Y);
+
+	const int32 GX = FMath::DivideAndRoundUp(Extent.X, ThreadGroupSize);
+	const int32 GY = FMath::DivideAndRoundUp(Extent.Y, ThreadGroupSize);
+	FComputeShaderUtils::AddPass(GraphBuilder,
+		RDG_EVENT_NAME("BloomTemporalBlend_%dx%d", Extent.X, Extent.Y),
+		Shader, P, FIntVector(GX, GY, 1));
+
+	return Output;
 }
 
 FRDGTextureRef FBloomRenderer::RunDownsampleChain(
@@ -144,14 +195,11 @@ FRDGTextureRef FBloomRenderer::RunUpsampleChain(
 
 	for (int32 i = Mips.Num() - 2; i >= 0; --i)
 	{
-		// Level index: 0 = finest (closest to full res), NumUpsampleSteps-1 = widest
 		const int32 LevelFromFine = i;
 		const float T = (NumUpsampleSteps > 1)
 			? static_cast<float>(LevelFromFine) / static_cast<float>(NumUpsampleSteps - 1)
 			: 0.0f;
 
-		// Per-level weight: fine levels contribute more, wide levels less
-		// Scatter shifts weight toward wider levels
 		const float BaseWeight = FMath::Lerp(1.0f, 0.1f, T);
 		const float ScatterBoost = ClampedScatter * T * 0.6f;
 		const float W = FMath::Max(BaseWeight + ScatterBoost, 0.05f);

@@ -10,25 +10,24 @@
 void FLookScopesModule::StartupModule()
 {
 	RegisterShaderDirectory();
-
-UE_LOG(LogTemp, Log, TEXT("LookScopes: 模块已加载"));
+	UE_LOG(LogTemp, Log, TEXT("LookScopes: Module loaded"));
 }
 
 void FLookScopesModule::ShutdownModule()
 {
-UE_LOG(LogTemp, Log, TEXT("LookScopes: 模块已卸载"));
+	UE_LOG(LogTemp, Log, TEXT("LookScopes: Module unloaded"));
 }
 
 void FLookScopesModule::RegisterShaderDirectory()
 {
 	FString PluginShaderDir = FPaths::Combine(
-IPluginManager::Get().FindPlugin(TEXT("LookScopes"))->GetBaseDir(),
+		IPluginManager::Get().FindPlugin(TEXT("LookScopes"))->GetBaseDir(),
 		TEXT("Shaders")
 	);
 
-AddShaderSourceDirectoryMapping(TEXT("/Plugin/LookScopes"), PluginShaderDir);
+	AddShaderSourceDirectoryMapping(TEXT("/Plugin/LookScopes"), PluginShaderDir);
 
-UE_LOG(LogTemp, Log, TEXT("LookScopes: Shader 目录已注册 -> %s"), *PluginShaderDir);
+	UE_LOG(LogTemp, Log, TEXT("LookScopes: Shader directory registered -> %s"), *PluginShaderDir);
 }
 
 #undef LOCTEXT_NAMESPACE
