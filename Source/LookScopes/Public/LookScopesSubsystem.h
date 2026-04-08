@@ -7,6 +7,7 @@
 #include "Framework/Commands/UICommandList.h"
 #include "Framework/Docking/TabManager.h"
 #include "AIColorGrader.h"
+#include "BloomRenderer.h"
 #include "LookScopesSubsystem.generated.h"
 
 class SLookMatchPanel;
@@ -70,6 +71,7 @@ public:
 	/** 自定义 Bloom 控制 */
 	void SetCustomBloomEnabled(bool bEnabled);
 	bool IsCustomBloomEnabled() const;
+	FCustomBloomParams GetBloomParams() const;
 	void SetSceneBloomIntensity(float V);
 	void SetSceneBloomThreshold(float V);
 	void SetVFXBloomIntensity(float V);
@@ -78,6 +80,24 @@ public:
 	void SetBloomScatter(float V);
 	void SetMaxBrightness(float V);
 	void SetBloomDebugMode(int32 Mode);
+	void SetTemporalWeight(float V);
+
+	void SaveBloomConfig() const;
+	void LoadBloomConfig();
+
+	void SaveAIGradingConfig() const;
+	void LoadAIGradingConfig();
+
+	/** AI 调色参数缓存（grader 未创建时 UI 读这里） */
+	float GetCachedAIIntensity() const { return CachedAIIntensity; }
+	float GetCachedAIInterval() const { return CachedAIInterval; }
+	float GetCachedAITransition() const { return CachedAITransition; }
+
+	/** 工具栏参数持久化 */
+	void SetRealtimeInterval(float Seconds);
+	float GetRealtimeInterval() const { return CachedRealtimeInterval; }
+	void SaveToolbarConfig() const;
+	void LoadToolbarConfig();
 
 private:
 	/** 注册 Tab Spawner */
@@ -116,6 +136,14 @@ private:
 
 	/** AI 调色器 */
 	TUniquePtr<FAIColorGrader> AIColorGrader;
+
+	/** AI 调色参数缓存 */
+	float CachedAIIntensity = 1.0f;
+	float CachedAIInterval = 0.1f;
+	float CachedAITransition = 0.3f;
+
+	/** 工具栏参数缓存 */
+	float CachedRealtimeInterval = 0.2f;
 
 	/** 自定义 Bloom ViewExtension（独立于 AI 调色） */
 	TSharedPtr<FCustomBloomViewExtension, ESPMode::ThreadSafe> BloomViewExtension;

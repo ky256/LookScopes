@@ -128,6 +128,7 @@ private:
 
 	// --- 面板折叠状态 ---
 
+	bool bMainContentVisible = true;
 	bool bPreviewVisible = true;
 	bool bScopesVisible = true;
 	bool bGalleryVisible = true;

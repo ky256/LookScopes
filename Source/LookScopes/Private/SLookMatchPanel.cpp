@@ -10,6 +10,8 @@
 #include "Widgets/SOverlay.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SSpinBox.h"
+#include "Widgets/Input/SNumericEntryBox.h"
+#include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SBorder.h"
@@ -40,10 +42,19 @@ void SLookMatchPanel::Construct(const FArguments& InArgs)
 		ResolutionOptionValues.Add(Res);
 	};
 	AddPreset(TEXT("自动"), FIntPoint::ZeroValue);
-	AddPreset(TEXT("1280 x 720"), FIntPoint(1280, 720));
-	AddPreset(TEXT("1920 x 1080"), FIntPoint(1920, 1080));
-	AddPreset(TEXT("2560 x 1440"), FIntPoint(2560, 1440));
-	AddPreset(TEXT("3840 x 2160"), FIntPoint(3840, 2160));
+
+	// 16:9
+	AddPreset(TEXT("1280 x 720  (16:9)"),   FIntPoint(1280, 720));
+	AddPreset(TEXT("1920 x 1080 (16:9)"),   FIntPoint(1920, 1080));
+	AddPreset(TEXT("2560 x 1440 (16:9)"),   FIntPoint(2560, 1440));
+	AddPreset(TEXT("3840 x 2160 (16:9)"),   FIntPoint(3840, 2160));
+
+	// Cinematic
+	AddPreset(TEXT("1920 x 804  (2.39:1)"), FIntPoint(1920, 804));
+	AddPreset(TEXT("2560 x 1072 (2.39:1)"), FIntPoint(2560, 1072));
+	AddPreset(TEXT("1920 x 818  (2.35:1)"), FIntPoint(1920, 818));
+	AddPreset(TEXT("1920 x 1038 (1.85:1)"), FIntPoint(1920, 1038));
+	AddPreset(TEXT("1920 x 960  (2:1)"),    FIntPoint(1920, 960));
 
 	// 订阅 SessionManager 的分析完成委托
 	TSharedPtr<FScopeSessionManager> SM = SessionManagerWeak.Pin();
@@ -57,67 +68,118 @@ void SLookMatchPanel::Construct(const FArguments& InArgs)
 	[
 		SNew(SVerticalBox)
 
-		// === 标题栏 ===
+		// === 标题栏（可折叠） ===
 		+ SVerticalBox::Slot()
 		.AutoHeight()
 		[
 			SNew(SBorder)
-			.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
-			.Padding(FMargin(12.0f, 5.0f))
+			.BorderImage(FAppStyle::GetBrush("DetailsView.CategoryTop"))
+			.Padding(0)
 			[
-				SNew(STextBlock)
-				.Text(LOCTEXT("PanelTitle", "视觉对标 & 示波器"))
-				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
-				.ColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.55f, 0.55f)))
+				SNew(SButton)
+				.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+				.ContentPadding(FMargin(8.0f, 0.0f))
+				.OnClicked_Lambda([this]()
+				{
+					bMainContentVisible = !bMainContentVisible;
+					Invalidate(EInvalidateWidgetReason::Layout);
+					return FReply::Handled();
+				})
+				[
+					SNew(SBox)
+					.MinDesiredHeight(26.0f)
+					[
+						SNew(SHorizontalBox)
+
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						.Padding(0.0f, 0.0f, 4.0f, 0.0f)
+						[
+							SNew(STextBlock)
+							.Text_Lambda([this]() -> FText
+							{
+								return FText::FromString(bMainContentVisible ? TEXT("\x25BC") : TEXT("\x25B6"));
+							})
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+							.ColorAndOpacity(FSlateColor(FLinearColor::White))
+						]
+
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("PanelTitle", "视觉对标 & 示波器"))
+							.Font(FAppStyle::GetFontStyle("DetailsView.CategoryFontStyle"))
+							.TextStyle(FAppStyle::Get(), "DetailsView.CategoryTextStyle")
+						]
+					]
+				]
 			]
 		]
 
-		// === 功能工具栏 ===
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		[
-			BuildToolbar()
-		]
-
-		// === 分隔线 ===
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		[
-			SNew(SSeparator)
-		]
-
-		// === 主体内容区（左右分栏） ===
+		// === 可折叠内容（工具栏 + 预览 + 示波器） ===
 		+ SVerticalBox::Slot()
 		.FillHeight(1.0f)
 		[
-			SNew(SHorizontalBox)
-
-			// 左侧：预览区（含可折叠 section header）
-			+ SHorizontalBox::Slot()
-			.FillWidth(1.0f)
+			SNew(SBox)
+			.Visibility_Lambda([this]()
+			{
+				return bMainContentVisible ? EVisibility::Visible : EVisibility::Collapsed;
+			})
 			[
-				BuildViewportPlaceholder()
-			]
+				SNew(SVerticalBox)
 
-			// 分隔线
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			[
-				SNew(SSeparator)
-				.Orientation(Orient_Vertical)
-			]
+				// 功能工具栏
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				[
+					BuildToolbar()
+				]
 
-			// 右侧：示波器区（含可折叠 section header）
-			+ SHorizontalBox::Slot()
-			.FillWidth(0.67f)
-			[
-				BuildScopesArea()
+				// 分隔线
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				[
+					SNew(SSeparator)
+				]
+
+				// 主体内容区（左右分栏）
+				+ SVerticalBox::Slot()
+				.FillHeight(1.0f)
+				[
+					SNew(SHorizontalBox)
+
+					// 左侧：预览区
+					+ SHorizontalBox::Slot()
+					.FillWidth(1.0f)
+					[
+						BuildViewportPlaceholder()
+					]
+
+					// 分隔线
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					[
+						SNew(SSeparator)
+						.Orientation(Orient_Vertical)
+					]
+
+					// 右侧：示波器区
+					+ SHorizontalBox::Slot()
+					.FillWidth(0.67f)
+					[
+						BuildScopesArea()
+					]
+				]
 			]
 		]
 
 		// === AI 调色区（含可折叠 section header） ===
 		+ SVerticalBox::Slot()
 		.AutoHeight()
+		.Padding(0.0f, 4.0f, 0.0f, 0.0f)
 		[
 			BuildAIGradingArea()
 		]
@@ -125,6 +187,7 @@ void SLookMatchPanel::Construct(const FArguments& InArgs)
 		// === Custom Bloom 区（含可折叠 section header） ===
 		+ SVerticalBox::Slot()
 		.AutoHeight()
+		.Padding(0.0f, 4.0f, 0.0f, 0.0f)
 		[
 			BuildCustomBloomArea()
 		]
@@ -132,6 +195,7 @@ void SLookMatchPanel::Construct(const FArguments& InArgs)
 		// === 底部画廊区（含可折叠 section header） ===
 		+ SVerticalBox::Slot()
 		.AutoHeight()
+		.Padding(0.0f, 4.0f, 0.0f, 0.0f)
 		[
 			BuildGalleryPlaceholder()
 		]
@@ -545,16 +609,18 @@ TSharedRef<SWidget> SLookMatchPanel::BuildToolbar()
 						SNew(SSpinBox<float>)
 						.MinValue(0.05f)
 						.MaxValue(2.0f)
-						.Value(0.2f)
+						.Value_Lambda([]() -> float
+						{
+							if (auto* S = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+								return S->GetRealtimeInterval();
+							return 0.2f;
+						})
 						.Delta(0.05f)
 						.MinDesiredWidth(50.0f)
-						.OnValueChanged_Lambda([this](float NewValue)
+						.OnValueChanged_Lambda([](float NewValue)
 						{
-							TSharedPtr<FScopeSessionManager> SM = SessionManagerWeak.Pin();
-							if (SM.IsValid())
-							{
-								SM->SetRealtimeInterval(NewValue);
-							}
+							if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+								Sub->SetRealtimeInterval(NewValue);
 						})
 					]
 				]
@@ -582,17 +648,17 @@ TSharedRef<SWidget> SLookMatchPanel::BuildViewportPlaceholder()
 {
 	return SNew(SVerticalBox)
 
-		// Section header: INPUT PREVIEW（可点击折叠）
+		// Section header: INPUT PREVIEW
 		+ SVerticalBox::Slot()
 		.AutoHeight()
 		[
 			SNew(SBorder)
-			.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
+			.BorderImage(FAppStyle::GetBrush("DetailsView.CategoryTop"))
 			.Padding(0)
 			[
 				SNew(SButton)
 				.ButtonStyle(FAppStyle::Get(), "SimpleButton")
-				.ContentPadding(FMargin(8.0f, 5.0f))
+				.ContentPadding(FMargin(8.0f, 0.0f))
 				.OnClicked_Lambda([this]()
 				{
 					bPreviewVisible = !bPreviewVisible;
@@ -600,46 +666,45 @@ TSharedRef<SWidget> SLookMatchPanel::BuildViewportPlaceholder()
 					return FReply::Handled();
 				})
 				[
-					SNew(SHorizontalBox)
-
-					+ SHorizontalBox::Slot()
-					.AutoWidth()
-					.VAlign(VAlign_Center)
+					SNew(SBox)
+					.MinDesiredHeight(26.0f)
 					[
-						SNew(STextBlock)
-						.Text(LOCTEXT("InputPreviewTitle", "输入预览"))
-						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
-						.ColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.55f, 0.55f)))
-					]
+						SNew(SHorizontalBox)
 
-					+ SHorizontalBox::Slot()
-					.AutoWidth()
-					.VAlign(VAlign_Center)
-					.Padding(8.0f, 0.0f, 0.0f, 0.0f)
-					[
-						SNew(STextBlock)
-						.Text(LOCTEXT("InputPreviewSource", "视口捕获"))
-						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-						.ColorAndOpacity(FSlateColor(FLinearColor(0.35f, 0.35f, 0.35f)))
-					]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						.Padding(0.0f, 0.0f, 4.0f, 0.0f)
+						[
+							SNew(STextBlock)
+							.Text_Lambda([this]() -> FText
+							{
+								return FText::FromString(bPreviewVisible ? TEXT("\x25BC") : TEXT("\x25B6"));
+							})
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+							.ColorAndOpacity(FSlateColor(FLinearColor::White))
+						]
 
-					+ SHorizontalBox::Slot()
-					.FillWidth(1.0f)
-					[
-						SNew(SSpacer)
-					]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("InputPreviewTitle", "输入预览"))
+							.Font(FAppStyle::GetFontStyle("DetailsView.CategoryFontStyle"))
+							.TextStyle(FAppStyle::Get(), "DetailsView.CategoryTextStyle")
+						]
 
-					+ SHorizontalBox::Slot()
-					.AutoWidth()
-					.VAlign(VAlign_Center)
-					[
-						SNew(STextBlock)
-						.Text_Lambda([this]() -> FText
-						{
-							return FText::FromString(bPreviewVisible ? TEXT("\x25BC") : TEXT("\x25B6"));
-						})
-						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-						.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.4f, 0.4f)))
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						.Padding(8.0f, 0.0f, 0.0f, 0.0f)
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("InputPreviewSource", "视口捕获"))
+							.Font(FAppStyle::GetFontStyle("PropertyWindow.NormalFont"))
+							.ColorAndOpacity(FSlateColor(FLinearColor(0.35f, 0.35f, 0.35f)))
+						]
 					]
 				]
 			]
@@ -671,17 +736,17 @@ TSharedRef<SWidget> SLookMatchPanel::BuildScopesArea()
 {
 	return SNew(SVerticalBox)
 
-		// Section header: SCOPES（可点击折叠）
+		// Section header: SCOPES
 		+ SVerticalBox::Slot()
 		.AutoHeight()
 		[
 			SNew(SBorder)
-			.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
+			.BorderImage(FAppStyle::GetBrush("DetailsView.CategoryTop"))
 			.Padding(0)
 			[
 				SNew(SButton)
 				.ButtonStyle(FAppStyle::Get(), "SimpleButton")
-				.ContentPadding(FMargin(8.0f, 5.0f))
+				.ContentPadding(FMargin(8.0f, 0.0f))
 				.OnClicked_Lambda([this]()
 				{
 					bScopesVisible = !bScopesVisible;
@@ -689,35 +754,34 @@ TSharedRef<SWidget> SLookMatchPanel::BuildScopesArea()
 					return FReply::Handled();
 				})
 				[
-					SNew(SHorizontalBox)
-
-					+ SHorizontalBox::Slot()
-					.AutoWidth()
-					.VAlign(VAlign_Center)
+					SNew(SBox)
+					.MinDesiredHeight(26.0f)
 					[
-						SNew(STextBlock)
-						.Text(LOCTEXT("ScopesHeader", "示波器"))
-						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
-						.ColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.55f, 0.55f)))
-					]
+						SNew(SHorizontalBox)
 
-					+ SHorizontalBox::Slot()
-					.FillWidth(1.0f)
-					[
-						SNew(SSpacer)
-					]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						.Padding(0.0f, 0.0f, 4.0f, 0.0f)
+						[
+							SNew(STextBlock)
+							.Text_Lambda([this]() -> FText
+							{
+								return FText::FromString(bScopesVisible ? TEXT("\x25BC") : TEXT("\x25C0"));
+							})
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+							.ColorAndOpacity(FSlateColor(FLinearColor::White))
+						]
 
-					+ SHorizontalBox::Slot()
-					.AutoWidth()
-					.VAlign(VAlign_Center)
-					[
-						SNew(STextBlock)
-						.Text_Lambda([this]() -> FText
-						{
-							return FText::FromString(bScopesVisible ? TEXT("\x25BC") : TEXT("\x25C0"));
-						})
-						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-						.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.4f, 0.4f)))
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("ScopesHeader", "示波器"))
+							.Font(FAppStyle::GetFontStyle("DetailsView.CategoryFontStyle"))
+							.TextStyle(FAppStyle::Get(), "DetailsView.CategoryTextStyle")
+						]
 					]
 				]
 			]
@@ -745,18 +809,18 @@ TSharedRef<SWidget> SLookMatchPanel::BuildScopesArea()
 					+ SVerticalBox::Slot()
 					.AutoHeight()
 					[
-						SNew(SBorder)
-						.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
+						SNew(SBox)
 						.Padding(FMargin(8.0f, 3.0f))
 						[
 							SNew(SHorizontalBox)
 
 							+ SHorizontalBox::Slot()
 							.AutoWidth()
+							.VAlign(VAlign_Center)
 							[
 								SNew(STextBlock)
 								.Text(LOCTEXT("WaveformTitle", "波形图 (亮度)"))
-								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+								.Font(FAppStyle::GetFontStyle("PropertyWindow.NormalFont"))
 								.ColorAndOpacity(FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f)))
 							]
 
@@ -768,10 +832,11 @@ TSharedRef<SWidget> SLookMatchPanel::BuildScopesArea()
 
 							+ SHorizontalBox::Slot()
 							.AutoWidth()
+							.VAlign(VAlign_Center)
 							[
 								SNew(STextBlock)
 								.Text(LOCTEXT("WaveformUnit", "IRE"))
-								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+								.Font(FAppStyle::GetFontStyle("PropertyWindow.NormalFont"))
 								.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.4f, 0.4f)))
 							]
 						]
@@ -796,18 +861,18 @@ TSharedRef<SWidget> SLookMatchPanel::BuildScopesArea()
 					+ SVerticalBox::Slot()
 					.AutoHeight()
 					[
-						SNew(SBorder)
-						.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
+						SNew(SBox)
 						.Padding(FMargin(8.0f, 3.0f))
 						[
 							SNew(SHorizontalBox)
 
 							+ SHorizontalBox::Slot()
 							.AutoWidth()
+							.VAlign(VAlign_Center)
 							[
 								SNew(STextBlock)
 								.Text(LOCTEXT("HistogramTitle", "直方图"))
-								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+								.Font(FAppStyle::GetFontStyle("PropertyWindow.NormalFont"))
 								.ColorAndOpacity(FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f)))
 							]
 
@@ -819,10 +884,11 @@ TSharedRef<SWidget> SLookMatchPanel::BuildScopesArea()
 
 							+ SHorizontalBox::Slot()
 							.AutoWidth()
+							.VAlign(VAlign_Center)
 							[
 								SNew(STextBlock)
 								.Text(LOCTEXT("HistogramUnit", "亮度"))
-								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+								.Font(FAppStyle::GetFontStyle("PropertyWindow.NormalFont"))
 								.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.4f, 0.4f)))
 							]
 						]
@@ -848,17 +914,17 @@ TSharedRef<SWidget> SLookMatchPanel::BuildAIGradingArea()
 {
 	return SNew(SVerticalBox)
 
-		// Section header
+		// Category header
 		+ SVerticalBox::Slot()
 		.AutoHeight()
 		[
 			SNew(SBorder)
-			.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
+			.BorderImage(FAppStyle::GetBrush("DetailsView.CategoryTop"))
 			.Padding(0)
 			[
 				SNew(SButton)
 				.ButtonStyle(FAppStyle::Get(), "SimpleButton")
-				.ContentPadding(FMargin(8.0f, 5.0f))
+				.ContentPadding(FMargin(8.0f, 0.0f))
 				.OnClicked_Lambda([this]()
 				{
 					bAIGradingVisible = !bAIGradingVisible;
@@ -866,79 +932,78 @@ TSharedRef<SWidget> SLookMatchPanel::BuildAIGradingArea()
 					return FReply::Handled();
 				})
 				[
-					SNew(SHorizontalBox)
-
-					+ SHorizontalBox::Slot()
-					.AutoWidth()
-					.VAlign(VAlign_Center)
+					SNew(SBox)
+					.MinDesiredHeight(26.0f)
 					[
-						SNew(STextBlock)
-						.Text(LOCTEXT("AIGradingHeader", "AI 自动调色"))
-						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
-						.ColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.55f, 0.55f)))
-					]
+						SNew(SHorizontalBox)
 
-					+ SHorizontalBox::Slot()
-					.AutoWidth()
-					.VAlign(VAlign_Center)
-					.Padding(8.0f, 0.0f, 0.0f, 0.0f)
-					[
-						SNew(STextBlock)
-						.Text_Lambda([]() -> FText
-						{
-							if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						.Padding(0.0f, 0.0f, 4.0f, 0.0f)
+						[
+							SNew(STextBlock)
+							.Text_Lambda([this]() -> FText
 							{
-								if (FAIColorGrader* G = Sub->GetAIColorGrader())
+								return FText::FromString(bAIGradingVisible ? TEXT("\x25BC") : TEXT("\x25B6"));
+							})
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+							.ColorAndOpacity(FSlateColor(FLinearColor::White))
+						]
+
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("AIGradingHeader", "AI 自动调色"))
+							.Font(FAppStyle::GetFontStyle("DetailsView.CategoryFontStyle"))
+							.TextStyle(FAppStyle::Get(), "DetailsView.CategoryTextStyle")
+						]
+
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						.Padding(8.0f, 0.0f, 0.0f, 0.0f)
+						[
+							SNew(STextBlock)
+							.Text_Lambda([]() -> FText
+							{
+								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
 								{
-									if (G->IsEnabled() && G->IsModelLoaded())
+									if (FAIColorGrader* G = Sub->GetAIColorGrader())
 									{
-										return FText::Format(
-											LOCTEXT("AIStatusRunning", "推理中 · {0} ms"),
-											FText::AsNumber(FMath::RoundToInt(G->GetLastInferenceTimeMs())));
-									}
-									if (G->IsModelLoaded())
-									{
-										return LOCTEXT("AIStatusReady", "就绪");
+										if (G->IsEnabled() && G->IsModelLoaded())
+										{
+											return FText::Format(
+												LOCTEXT("AIStatusRunning", "推理中 · {0} ms"),
+												FText::AsNumber(FMath::RoundToInt(G->GetLastInferenceTimeMs())));
+										}
+										if (G->IsModelLoaded())
+										{
+											return LOCTEXT("AIStatusReady", "就绪");
+										}
 									}
 								}
-							}
-							return LOCTEXT("AIStatusOff", "未加载");
-						})
-						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-						.ColorAndOpacity_Lambda([]() -> FSlateColor
-						{
-							if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+								return LOCTEXT("AIStatusOff", "未加载");
+							})
+							.Font(FAppStyle::GetFontStyle("PropertyWindow.NormalFont"))
+							.ColorAndOpacity_Lambda([]() -> FSlateColor
 							{
-								if (Sub->IsAIGradingEnabled())
-									return FSlateColor(FLinearColor(0.2f, 0.9f, 0.2f));
-							}
-							return FSlateColor(FLinearColor(0.35f, 0.35f, 0.35f));
-						})
-					]
-
-					+ SHorizontalBox::Slot()
-					.FillWidth(1.0f)
-					[
-						SNew(SSpacer)
-					]
-
-					+ SHorizontalBox::Slot()
-					.AutoWidth()
-					.VAlign(VAlign_Center)
-					[
-						SNew(STextBlock)
-						.Text_Lambda([this]() -> FText
-						{
-							return FText::FromString(bAIGradingVisible ? TEXT("\x25BC") : TEXT("\x25B6"));
-						})
-						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-						.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.4f, 0.4f)))
+								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+								{
+									if (Sub->IsAIGradingEnabled())
+										return FSlateColor(FLinearColor(0.2f, 0.9f, 0.2f));
+								}
+								return FSlateColor(FLinearColor(0.35f, 0.35f, 0.35f));
+							})
+						]
 					]
 				]
 			]
 		]
 
-		// 内容区（可折叠）
+		// Content (collapsible)
 		+ SVerticalBox::Slot()
 		.AutoHeight()
 		[
@@ -949,8 +1014,8 @@ TSharedRef<SWidget> SLookMatchPanel::BuildAIGradingArea()
 			})
 			[
 				SNew(SBorder)
-				.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
-				.Padding(FMargin(12.0f, 6.0f))
+				.BorderImage(FAppStyle::GetBrush("DetailsView.GridLine"))
+				.Padding(FMargin(16.0f, 4.0f, 0.0f, 4.0f))
 				[
 					SNew(SVerticalBox)
 
@@ -964,65 +1029,41 @@ TSharedRef<SWidget> SLookMatchPanel::BuildAIGradingArea()
 						+ SHorizontalBox::Slot()
 						.AutoWidth()
 						.VAlign(VAlign_Center)
+						.Padding(0.0f, 0.0f, 8.0f, 0.0f)
 						[
-							SNew(SButton)
-							.ButtonStyle(FAppStyle::Get(), "SimpleButton")
-							.ContentPadding(FMargin(6.0f, 3.0f))
-							.OnClicked_Lambda([]()
+							SNew(SBox)
+							.WidthOverride(80.0f)
+							[
+								SNew(STextBlock)
+								.Text(LOCTEXT("AIEnableLabel", "启用 AI 调色"))
+								.ToolTipText(LOCTEXT("AIEnableTip", "开启/关闭 AI 自动调色，使用 ONNX 模型实时推理生成 LUT"))
+								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+								.ColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f)))
+							]
+						]
+
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						[
+							SNew(SCheckBox)
+							.IsChecked_Lambda([]()
+							{
+								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+									return Sub->IsAIGradingEnabled() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+								return ECheckBoxState::Unchecked;
+							})
+							.OnCheckStateChanged_Lambda([](ECheckBoxState NewState)
 							{
 								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
 								{
-									if (Sub->IsAIGradingEnabled())
-										Sub->DisableAIGrading();
-									else
+									if (NewState == ECheckBoxState::Checked)
 										Sub->EnableAIGrading();
+									else
+										Sub->DisableAIGrading();
 								}
-								return FReply::Handled();
 							})
-							[
-								SNew(SHorizontalBox)
-
-								+ SHorizontalBox::Slot()
-								.AutoWidth()
-								.VAlign(VAlign_Center)
-								.Padding(0.0f, 0.0f, 4.0f, 0.0f)
-								[
-									SNew(STextBlock)
-									.Text_Lambda([]() -> FText
-									{
-										if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
-											return Sub->IsAIGradingEnabled()
-												? FText::FromString(TEXT("\x25A0"))
-												: FText::FromString(TEXT("\x25A1"));
-										return FText::FromString(TEXT("\x25A1"));
-									})
-									.ColorAndOpacity_Lambda([]() -> FSlateColor
-									{
-										if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
-											return Sub->IsAIGradingEnabled()
-												? FSlateColor(FLinearColor(0.2f, 0.8f, 0.4f))
-												: FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f));
-										return FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f));
-									})
-									.Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
-								]
-
-								+ SHorizontalBox::Slot()
-								.AutoWidth()
-								.VAlign(VAlign_Center)
-								[
-									SNew(STextBlock)
-									.Text_Lambda([]() -> FText
-									{
-										if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
-											return Sub->IsAIGradingEnabled()
-												? LOCTEXT("AIDisable", "停止 AI 调色")
-												: LOCTEXT("AIEnable", "启用 AI 调色");
-										return LOCTEXT("AIEnable", "启用 AI 调色");
-									})
-									.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
-								]
-							]
+							.Padding(0.0f)
 						]
 
 						+ SHorizontalBox::Slot()
@@ -1072,7 +1113,7 @@ TSharedRef<SWidget> SLookMatchPanel::BuildAIGradingArea()
 						SNew(SSeparator)
 					]
 
-					// 强度滑条
+					// 强度
 					+ SVerticalBox::Slot()
 					.AutoHeight()
 					.Padding(0.0f, 2.0f)
@@ -1085,29 +1126,46 @@ TSharedRef<SWidget> SLookMatchPanel::BuildAIGradingArea()
 						.Padding(0.0f, 0.0f, 8.0f, 0.0f)
 						[
 							SNew(SBox)
-							.WidthOverride(60.0f)
+							.WidthOverride(80.0f)
 							[
 								SNew(STextBlock)
 								.Text(LOCTEXT("AIIntensity", "强度"))
+								.ToolTipText(LOCTEXT("AIIntensityTip", "AI 调色 LUT 的混合强度，0=不应用，1=完全应用"))
 								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 								.ColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f)))
 							]
 						]
 
 						+ SHorizontalBox::Slot()
-						.FillWidth(1.0f)
+						.AutoWidth()
 						.VAlign(VAlign_Center)
 						[
-							SNew(SSpinBox<float>)
-							.MinValue(0.0f)
-							.MaxValue(1.0f)
-							.Value(1.0f)
-							.Delta(0.05f)
-							.OnValueChanged_Lambda([](float Val)
-							{
-								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
-									Sub->SetAIGradingIntensity(Val);
-							})
+							SNew(SBox)
+							.WidthOverride(125.0f)
+							[
+								SNew(SNumericEntryBox<float>)
+								.Value_Lambda([]() -> TOptional<float>
+								{
+									if (auto* S = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+										return S->GetCachedAIIntensity();
+									return 1.0f;
+								})
+								.OnValueChanged_Lambda([](float Val)
+								{
+									if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+										Sub->SetAIGradingIntensity(Val);
+								})
+								.OnValueCommitted_Lambda([](float Val, ETextCommit::Type)
+								{
+									if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+										Sub->SetAIGradingIntensity(Val);
+								})
+								.AllowSpin(true)
+								.Delta(0.05f)
+								.MinValue(0.0f)
+								.MaxValue(1.0f)
+								.Font(FAppStyle::GetFontStyle("PropertyWindow.NormalFont"))
+							]
 						]
 					]
 
@@ -1124,29 +1182,46 @@ TSharedRef<SWidget> SLookMatchPanel::BuildAIGradingArea()
 						.Padding(0.0f, 0.0f, 8.0f, 0.0f)
 						[
 							SNew(SBox)
-							.WidthOverride(60.0f)
+							.WidthOverride(80.0f)
 							[
 								SNew(STextBlock)
 								.Text(LOCTEXT("AIInterval", "间隔(ms)"))
+								.ToolTipText(LOCTEXT("AIIntervalTip", "AI 推理间隔（毫秒），值越小推理越频繁，GPU 负载越高"))
 								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 								.ColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f)))
 							]
 						]
 
 						+ SHorizontalBox::Slot()
-						.FillWidth(1.0f)
+						.AutoWidth()
 						.VAlign(VAlign_Center)
 						[
-							SNew(SSpinBox<float>)
-							.MinValue(50.0f)
-							.MaxValue(2000.0f)
-							.Value(100.0f)
-							.Delta(50.0f)
-							.OnValueChanged_Lambda([](float Val)
-							{
-								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
-									Sub->SetAIGradingInterval(Val / 1000.0f);
-							})
+							SNew(SBox)
+							.WidthOverride(125.0f)
+							[
+								SNew(SNumericEntryBox<float>)
+								.Value_Lambda([]() -> TOptional<float>
+								{
+									if (auto* S = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+										return S->GetCachedAIInterval() * 1000.0f;
+									return 100.0f;
+								})
+								.OnValueChanged_Lambda([](float Val)
+								{
+									if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+										Sub->SetAIGradingInterval(Val / 1000.0f);
+								})
+								.OnValueCommitted_Lambda([](float Val, ETextCommit::Type)
+								{
+									if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+										Sub->SetAIGradingInterval(Val / 1000.0f);
+								})
+								.AllowSpin(true)
+								.Delta(10.0f)
+								.MinValue(50.0f)
+								.MaxValue(2000.0f)
+								.Font(FAppStyle::GetFontStyle("PropertyWindow.NormalFont"))
+							]
 						]
 					]
 
@@ -1163,30 +1238,46 @@ TSharedRef<SWidget> SLookMatchPanel::BuildAIGradingArea()
 						.Padding(0.0f, 0.0f, 8.0f, 0.0f)
 						[
 							SNew(SBox)
-							.WidthOverride(60.0f)
+							.WidthOverride(80.0f)
 							[
 								SNew(STextBlock)
 								.Text(LOCTEXT("AITransition", "过渡"))
+								.ToolTipText(LOCTEXT("AITransitionTip", "LUT 切换的过渡时间（秒），值越大过渡越平滑"))
 								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 								.ColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f)))
 							]
 						]
 
 						+ SHorizontalBox::Slot()
-						.FillWidth(1.0f)
+						.AutoWidth()
 						.VAlign(VAlign_Center)
 						[
-							SNew(SSpinBox<float>)
-							.MinValue(0.05f)
-							.MaxValue(3.0f)
-							.Value(0.3f)
-							.Delta(0.05f)
-							.ToolTipText(LOCTEXT("AITransitionTip", "过渡时间 (秒)，越大越平滑"))
-							.OnValueChanged_Lambda([](float Val)
-							{
-								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
-									Sub->SetAIGradingTransitionTime(Val);
-							})
+							SNew(SBox)
+							.WidthOverride(125.0f)
+							[
+								SNew(SNumericEntryBox<float>)
+								.Value_Lambda([]() -> TOptional<float>
+								{
+									if (auto* S = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+										return S->GetCachedAITransition();
+									return 0.3f;
+								})
+								.OnValueChanged_Lambda([](float Val)
+								{
+									if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+										Sub->SetAIGradingTransitionTime(Val);
+								})
+								.OnValueCommitted_Lambda([](float Val, ETextCommit::Type)
+								{
+									if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+										Sub->SetAIGradingTransitionTime(Val);
+								})
+								.AllowSpin(true)
+								.Delta(0.05f)
+								.MinValue(0.05f)
+								.MaxValue(3.0f)
+								.Font(FAppStyle::GetFontStyle("PropertyWindow.NormalFont"))
+							]
 						]
 					]
 
@@ -1224,10 +1315,11 @@ TSharedRef<SWidget> SLookMatchPanel::BuildAIGradingArea()
 
 TSharedRef<SWidget> SLookMatchPanel::BuildCustomBloomArea()
 {
-	auto MakeSliderRow = [](const FText& Label, float Min, float Max, float Default, float Step,
-		TFunction<void(float)> OnChanged, TFunction<float()> GetValue = nullptr) -> TSharedRef<SWidget>
+	auto MakeParamRow = [](const FText& Label, const FText& Tooltip, float MaxVal, float Step,
+		TFunction<void(float)> OnChanged, TFunction<float()> GetValue) -> TSharedRef<SWidget>
 	{
 		return SNew(SHorizontalBox)
+			.ToolTipText(Tooltip)
 
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
@@ -1245,31 +1337,38 @@ TSharedRef<SWidget> SLookMatchPanel::BuildCustomBloomArea()
 			]
 
 			+ SHorizontalBox::Slot()
-			.FillWidth(1.0f)
+			.AutoWidth()
 			.VAlign(VAlign_Center)
 			[
-				SNew(SSpinBox<float>)
-				.MinValue(Min)
-				.MaxValue(Max)
-				.Value(Default)
-				.Delta(Step)
-				.OnValueChanged_Lambda([OnChanged](float Val) { OnChanged(Val); })
+				SNew(SBox)
+				.WidthOverride(125.0f)
+				[
+					SNew(SNumericEntryBox<float>)
+					.Value_Lambda([GetValue]() -> TOptional<float> { return GetValue(); })
+					.OnValueChanged_Lambda([OnChanged](float Val) { OnChanged(Val); })
+					.OnValueCommitted_Lambda([OnChanged](float Val, ETextCommit::Type) { OnChanged(Val); })
+					.AllowSpin(true)
+					.Delta(Step)
+					.MinValue(0.0f)
+					.MaxValue(MaxVal)
+					.Font(FAppStyle::GetFontStyle("PropertyWindow.NormalFont"))
+				]
 			];
 	};
 
 	return SNew(SVerticalBox)
 
-		// Section header
+		// Category header
 		+ SVerticalBox::Slot()
 		.AutoHeight()
 		[
 			SNew(SBorder)
-			.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
+			.BorderImage(FAppStyle::GetBrush("DetailsView.CategoryTop"))
 			.Padding(0)
 			[
 				SNew(SButton)
 				.ButtonStyle(FAppStyle::Get(), "SimpleButton")
-				.ContentPadding(FMargin(8.0f, 5.0f))
+				.ContentPadding(FMargin(8.0f, 0.0f))
 				.OnClicked_Lambda([this]()
 				{
 					bBloomVisible = !bBloomVisible;
@@ -1277,60 +1376,34 @@ TSharedRef<SWidget> SLookMatchPanel::BuildCustomBloomArea()
 					return FReply::Handled();
 				})
 				[
-					SNew(SHorizontalBox)
-
-					+ SHorizontalBox::Slot()
-					.AutoWidth()
-					.VAlign(VAlign_Center)
+					SNew(SBox)
+					.MinDesiredHeight(26.0f)
 					[
-						SNew(STextBlock)
-						.Text(LOCTEXT("BloomHeader", "Custom Bloom"))
-						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
-						.ColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.55f, 0.55f)))
-					]
+						SNew(SHorizontalBox)
 
-					+ SHorizontalBox::Slot()
-					.AutoWidth()
-					.VAlign(VAlign_Center)
-					.Padding(8.0f, 0.0f, 0.0f, 0.0f)
-					[
-						SNew(STextBlock)
-						.Text_Lambda([]() -> FText
-						{
-							if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
-								return Sub->IsCustomBloomEnabled()
-									? LOCTEXT("BloomStatusOn", "ON")
-									: LOCTEXT("BloomStatusOff", "OFF");
-							return LOCTEXT("BloomStatusOff", "OFF");
-						})
-						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-						.ColorAndOpacity_Lambda([]() -> FSlateColor
-						{
-							if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
-								return Sub->IsCustomBloomEnabled()
-									? FSlateColor(FLinearColor(0.2f, 0.9f, 0.2f))
-									: FSlateColor(FLinearColor(0.35f, 0.35f, 0.35f));
-							return FSlateColor(FLinearColor(0.35f, 0.35f, 0.35f));
-						})
-					]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						.Padding(0.0f, 0.0f, 4.0f, 0.0f)
+						[
+							SNew(STextBlock)
+							.Text_Lambda([this]() -> FText
+							{
+								return FText::FromString(bBloomVisible ? TEXT("\x25BC") : TEXT("\x25B6"));
+							})
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+							.ColorAndOpacity(FSlateColor(FLinearColor::White))
+						]
 
-					+ SHorizontalBox::Slot()
-					.FillWidth(1.0f)
-					[
-						SNew(SSpacer)
-					]
-
-					+ SHorizontalBox::Slot()
-					.AutoWidth()
-					.VAlign(VAlign_Center)
-					[
-						SNew(STextBlock)
-						.Text_Lambda([this]() -> FText
-						{
-							return FText::FromString(bBloomVisible ? TEXT("\x25BC") : TEXT("\x25B6"));
-						})
-						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-						.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.4f, 0.4f)))
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("BloomHeader", "Custom Bloom"))
+							.Font(FAppStyle::GetFontStyle("DetailsView.CategoryFontStyle"))
+							.TextStyle(FAppStyle::Get(), "DetailsView.CategoryTextStyle")
+						]
 					]
 				]
 			]
@@ -1347,8 +1420,8 @@ TSharedRef<SWidget> SLookMatchPanel::BuildCustomBloomArea()
 			})
 			[
 				SNew(SBorder)
-				.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
-				.Padding(FMargin(12.0f, 6.0f))
+				.BorderImage(FAppStyle::GetBrush("DetailsView.GridLine"))
+				.Padding(FMargin(16.0f, 4.0f, 0.0f, 4.0f))
 				[
 					SNew(SVerticalBox)
 
@@ -1357,58 +1430,41 @@ TSharedRef<SWidget> SLookMatchPanel::BuildCustomBloomArea()
 					.AutoHeight()
 					.Padding(0.0f, 2.0f)
 					[
-						SNew(SButton)
-						.ButtonStyle(FAppStyle::Get(), "SimpleButton")
-						.ContentPadding(FMargin(6.0f, 3.0f))
-						.OnClicked_Lambda([]()
-						{
-							if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
-								Sub->SetCustomBloomEnabled(!Sub->IsCustomBloomEnabled());
-							return FReply::Handled();
-						})
+						SNew(SHorizontalBox)
+
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						.Padding(0.0f, 0.0f, 8.0f, 0.0f)
 						[
-							SNew(SHorizontalBox)
-
-							+ SHorizontalBox::Slot()
-							.AutoWidth()
-							.VAlign(VAlign_Center)
-							.Padding(0.0f, 0.0f, 4.0f, 0.0f)
+							SNew(SBox)
+							.WidthOverride(80.0f)
 							[
 								SNew(STextBlock)
-								.Text_Lambda([]() -> FText
-								{
-									if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
-										return Sub->IsCustomBloomEnabled()
-											? FText::FromString(TEXT("\x25A0"))
-											: FText::FromString(TEXT("\x25A1"));
-									return FText::FromString(TEXT("\x25A1"));
-								})
-								.ColorAndOpacity_Lambda([]() -> FSlateColor
-								{
-									if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
-										return Sub->IsCustomBloomEnabled()
-											? FSlateColor(FLinearColor(0.2f, 0.8f, 0.4f))
-											: FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f));
-									return FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f));
-								})
-								.Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
+								.Text(LOCTEXT("BloomEnableLabel", "启用 Bloom"))
+								.ToolTipText(LOCTEXT("BloomEnableTip", "开启/关闭自定义双层 Bloom（场景 + VFX 半透明层独立控制）"))
+								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+								.ColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f)))
 							]
+						]
 
-							+ SHorizontalBox::Slot()
-							.AutoWidth()
-							.VAlign(VAlign_Center)
-							[
-								SNew(STextBlock)
-								.Text_Lambda([]() -> FText
-								{
-									if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
-										return Sub->IsCustomBloomEnabled()
-											? LOCTEXT("BloomDisable", "关闭 Custom Bloom")
-											: LOCTEXT("BloomEnable", "启用 Custom Bloom");
-									return LOCTEXT("BloomEnable", "启用 Custom Bloom");
-								})
-								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
-							]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						[
+							SNew(SCheckBox)
+							.IsChecked_Lambda([]()
+							{
+								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+									return Sub->IsCustomBloomEnabled() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+								return ECheckBoxState::Unchecked;
+							})
+							.OnCheckStateChanged_Lambda([](ECheckBoxState NewState)
+							{
+								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+									Sub->SetCustomBloomEnabled(NewState == ECheckBoxState::Checked);
+							})
+							.Padding(0.0f)
 						]
 					]
 
@@ -1424,14 +1480,12 @@ TSharedRef<SWidget> SLookMatchPanel::BuildCustomBloomArea()
 					.AutoHeight()
 					.Padding(0.0f, 2.0f)
 					[
-						MakeSliderRow(
+						MakeParamRow(
 							LOCTEXT("SceneIntensity", "Scene 强度"),
-							0.0f, 5.0f, 0.8f, 0.1f,
-							[](float Val)
-							{
-								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
-									Sub->SetSceneBloomIntensity(Val);
-							})
+							LOCTEXT("SceneIntensityTip", "场景 Bloom 的整体强度倍数，值越大辉光越明显"),
+							2.0f, 0.05f,
+							[](float Val) { if (auto* S = GEditor->GetEditorSubsystem<ULookScopesSubsystem>()) S->SetSceneBloomIntensity(Val); },
+							[]() -> float { auto* S = GEditor->GetEditorSubsystem<ULookScopesSubsystem>(); return S ? S->GetBloomParams().SceneBloomIntensity : 0.8f; })
 					]
 
 					// Scene Bloom Threshold
@@ -1439,14 +1493,12 @@ TSharedRef<SWidget> SLookMatchPanel::BuildCustomBloomArea()
 					.AutoHeight()
 					.Padding(0.0f, 2.0f)
 					[
-						MakeSliderRow(
+						MakeParamRow(
 							LOCTEXT("SceneThreshold", "Scene 阈值"),
-							0.0f, 5.0f, 1.0f, 0.1f,
-							[](float Val)
-							{
-								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
-									Sub->SetSceneBloomThreshold(Val);
-							})
+							LOCTEXT("SceneThresholdTip", "场景 HDR 亮度阈值，只有超过此亮度的像素才会产生 Bloom"),
+							10.0f, 0.05f,
+							[](float Val) { if (auto* S = GEditor->GetEditorSubsystem<ULookScopesSubsystem>()) S->SetSceneBloomThreshold(Val); },
+							[]() -> float { auto* S = GEditor->GetEditorSubsystem<ULookScopesSubsystem>(); return S ? S->GetBloomParams().SceneBloomThreshold : 1.0f; })
 					]
 
 					+ SVerticalBox::Slot()
@@ -1461,14 +1513,12 @@ TSharedRef<SWidget> SLookMatchPanel::BuildCustomBloomArea()
 					.AutoHeight()
 					.Padding(0.0f, 2.0f)
 					[
-						MakeSliderRow(
+						MakeParamRow(
 							LOCTEXT("VFXIntensity", "VFX 强度"),
-							0.0f, 5.0f, 1.0f, 0.1f,
-							[](float Val)
-							{
-								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
-									Sub->SetVFXBloomIntensity(Val);
-							})
+							LOCTEXT("VFXIntensityTip", "半透明 VFX 层 Bloom 的强度倍数"),
+							3.0f, 0.05f,
+							[](float Val) { if (auto* S = GEditor->GetEditorSubsystem<ULookScopesSubsystem>()) S->SetVFXBloomIntensity(Val); },
+							[]() -> float { auto* S = GEditor->GetEditorSubsystem<ULookScopesSubsystem>(); return S ? S->GetBloomParams().VFXBloomIntensity : 1.0f; })
 					]
 
 					// VFX Bloom Threshold
@@ -1476,14 +1526,12 @@ TSharedRef<SWidget> SLookMatchPanel::BuildCustomBloomArea()
 					.AutoHeight()
 					.Padding(0.0f, 2.0f)
 					[
-						MakeSliderRow(
+						MakeParamRow(
 							LOCTEXT("VFXThreshold", "VFX 阈值"),
-							0.0f, 5.0f, 0.2f, 0.05f,
-							[](float Val)
-							{
-								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
-									Sub->SetVFXBloomThreshold(Val);
-							})
+							LOCTEXT("VFXThresholdTip", "半透明 VFX 层的 HDR 亮度阈值"),
+							2.0f, 0.05f,
+							[](float Val) { if (auto* S = GEditor->GetEditorSubsystem<ULookScopesSubsystem>()) S->SetVFXBloomThreshold(Val); },
+							[]() -> float { auto* S = GEditor->GetEditorSubsystem<ULookScopesSubsystem>(); return S ? S->GetBloomParams().VFXBloomThreshold : 0.2f; })
 					]
 
 					+ SVerticalBox::Slot()
@@ -1499,6 +1547,7 @@ TSharedRef<SWidget> SLookMatchPanel::BuildCustomBloomArea()
 					.Padding(0.0f, 2.0f)
 					[
 						SNew(SHorizontalBox)
+						.ToolTipText(LOCTEXT("BloomLevelsTip", "Bloom 降采样层数 (3~6)，层数越多辉光范围越大，性能消耗越高"))
 
 						+ SHorizontalBox::Slot()
 						.AutoWidth()
@@ -1516,19 +1565,30 @@ TSharedRef<SWidget> SLookMatchPanel::BuildCustomBloomArea()
 						]
 
 						+ SHorizontalBox::Slot()
-						.FillWidth(1.0f)
+						.AutoWidth()
 						.VAlign(VAlign_Center)
 						[
-							SNew(SSpinBox<int32>)
-							.MinValue(3)
-							.MaxValue(6)
-							.Value(6)
-							.Delta(1)
-							.OnValueChanged_Lambda([](int32 Val)
-							{
-								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
-									Sub->SetBloomLevels(Val);
-							})
+							SNew(SBox)
+							.WidthOverride(125.0f)
+							[
+								SNew(SNumericEntryBox<int32>)
+								.Value_Lambda([]() -> TOptional<int32> { auto* S = GEditor->GetEditorSubsystem<ULookScopesSubsystem>(); return S ? S->GetBloomParams().BloomLevels : 6; })
+								.OnValueChanged_Lambda([](int32 Val)
+								{
+									if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+										Sub->SetBloomLevels(FMath::Clamp(Val, 3, 6));
+								})
+								.OnValueCommitted_Lambda([](int32 Val, ETextCommit::Type)
+								{
+									if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
+										Sub->SetBloomLevels(FMath::Clamp(Val, 3, 6));
+								})
+								.AllowSpin(true)
+								.MinValue(3)
+								.MaxValue(6)
+								.Delta(1)
+								.Font(FAppStyle::GetFontStyle("PropertyWindow.NormalFont"))
+							]
 						]
 					]
 
@@ -1537,14 +1597,12 @@ TSharedRef<SWidget> SLookMatchPanel::BuildCustomBloomArea()
 					.AutoHeight()
 					.Padding(0.0f, 2.0f)
 					[
-						MakeSliderRow(
+						MakeParamRow(
 							LOCTEXT("BloomScatter", "Scatter"),
-							0.0f, 1.0f, 0.4f, 0.05f,
-							[](float Val)
-							{
-								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
-									Sub->SetBloomScatter(Val);
-							})
+							LOCTEXT("BloomScatterTip", "Bloom 扩散程度，0=集中，1=分散，值越大辉光越向外扩散"),
+							1.0f, 0.05f,
+							[](float Val) { if (auto* S = GEditor->GetEditorSubsystem<ULookScopesSubsystem>()) S->SetBloomScatter(Val); },
+							[]() -> float { auto* S = GEditor->GetEditorSubsystem<ULookScopesSubsystem>(); return S ? S->GetBloomParams().Scatter : 0.4f; })
 					]
 
 					// Max Brightness (anti-flicker)
@@ -1552,14 +1610,12 @@ TSharedRef<SWidget> SLookMatchPanel::BuildCustomBloomArea()
 					.AutoHeight()
 					.Padding(0.0f, 2.0f)
 					[
-						MakeSliderRow(
+						MakeParamRow(
 							LOCTEXT("MaxBrightness", "Max亮度"),
-							0.0f, 50.0f, 10.0f, 1.0f,
-							[](float Val)
-							{
-								if (auto* Sub = GEditor->GetEditorSubsystem<ULookScopesSubsystem>())
-									Sub->SetMaxBrightness(Val);
-							})
+							LOCTEXT("MaxBrightnessTip", "HDR 亮度上限钳制，用于抑制高光闪烁，值越低抗闪烁越强"),
+							50.0f, 0.5f,
+							[](float Val) { if (auto* S = GEditor->GetEditorSubsystem<ULookScopesSubsystem>()) S->SetMaxBrightness(Val); },
+							[]() -> float { auto* S = GEditor->GetEditorSubsystem<ULookScopesSubsystem>(); return S ? S->GetBloomParams().MaxBrightness : 10.0f; })
 					]
 				]
 			]
@@ -1574,17 +1630,17 @@ TSharedRef<SWidget> SLookMatchPanel::BuildGalleryPlaceholder()
 {
 	return SNew(SVerticalBox)
 
-		// Section header: GALLERY（可点击折叠）
+		// Section header: GALLERY
 		+ SVerticalBox::Slot()
 		.AutoHeight()
 		[
 			SNew(SBorder)
-			.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
+			.BorderImage(FAppStyle::GetBrush("DetailsView.CategoryTop"))
 			.Padding(0)
 			[
 				SNew(SButton)
 				.ButtonStyle(FAppStyle::Get(), "SimpleButton")
-				.ContentPadding(FMargin(8.0f, 4.0f))
+				.ContentPadding(FMargin(8.0f, 0.0f))
 				.OnClicked_Lambda([this]()
 				{
 					bGalleryVisible = !bGalleryVisible;
@@ -1592,35 +1648,34 @@ TSharedRef<SWidget> SLookMatchPanel::BuildGalleryPlaceholder()
 					return FReply::Handled();
 				})
 				[
-					SNew(SHorizontalBox)
-
-					+ SHorizontalBox::Slot()
-					.AutoWidth()
-					.VAlign(VAlign_Center)
+					SNew(SBox)
+					.MinDesiredHeight(26.0f)
 					[
-						SNew(STextBlock)
-						.Text(LOCTEXT("GalleryHeader", "参考画廊"))
-						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
-						.ColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.55f, 0.55f)))
-					]
+						SNew(SHorizontalBox)
 
-					+ SHorizontalBox::Slot()
-					.FillWidth(1.0f)
-					[
-						SNew(SSpacer)
-					]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						.Padding(0.0f, 0.0f, 4.0f, 0.0f)
+						[
+							SNew(STextBlock)
+							.Text_Lambda([this]() -> FText
+							{
+								return FText::FromString(bGalleryVisible ? TEXT("\x25BC") : TEXT("\x25B2"));
+							})
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+							.ColorAndOpacity(FSlateColor(FLinearColor::White))
+						]
 
-					+ SHorizontalBox::Slot()
-					.AutoWidth()
-					.VAlign(VAlign_Center)
-					[
-						SNew(STextBlock)
-						.Text_Lambda([this]() -> FText
-						{
-							return FText::FromString(bGalleryVisible ? TEXT("\x25BC") : TEXT("\x25B2"));
-						})
-						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-						.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.4f, 0.4f)))
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("GalleryHeader", "参考画廊"))
+							.Font(FAppStyle::GetFontStyle("DetailsView.CategoryFontStyle"))
+							.TextStyle(FAppStyle::Get(), "DetailsView.CategoryTextStyle")
+						]
 					]
 				]
 			]
@@ -1638,8 +1693,8 @@ TSharedRef<SWidget> SLookMatchPanel::BuildGalleryPlaceholder()
 			.HeightOverride(56.0f)
 			[
 				SNew(SBorder)
-				.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
-				.Padding(FMargin(12.0f, 4.0f))
+				.BorderImage(FAppStyle::GetBrush("DetailsView.GridLine"))
+				.Padding(FMargin(16.0f, 4.0f, 0.0f, 4.0f))
 				[
 					SNew(SHorizontalBox)
 

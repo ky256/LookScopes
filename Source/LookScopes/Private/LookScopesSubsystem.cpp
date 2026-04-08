@@ -166,6 +166,9 @@ void ULookScopesSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	RegisterMenus();
 
 	BloomViewExtension = FSceneViewExtensions::NewExtension<FCustomBloomViewExtension>();
+	LoadBloomConfig();
+	LoadAIGradingConfig();
+	LoadToolbarConfig();
 
 UE_LOG(LogTemp, Log, TEXT("LookScopes: Subsystem 已初始化"));
 }
@@ -368,6 +371,8 @@ void ULookScopesSubsystem::SetStreamResolution(FIntPoint InRes)
 		ViewportStreamer->StopStreaming();
 		ViewportStreamer->StartStreaming(Name, StreamResolution.X, StreamResolution.Y);
 	}
+
+	SaveToolbarConfig();
 }
 
 void ULookScopesSubsystem::StopNDIStream()
@@ -396,6 +401,9 @@ void ULookScopesSubsystem::EnableAIGrading(const FString& OnnxModelPath)
 		{
 			UE_LOG(LogTemp, Error, TEXT("LookScopes: AI 调色器初始化失败"));
 		}
+		AIColorGrader->SetIntensity(CachedAIIntensity);
+		AIColorGrader->SetInferenceInterval(CachedAIInterval);
+		AIColorGrader->SetTransitionTime(CachedAITransition);
 	}
 
 	AIColorGrader->SetEnabled(true);
@@ -416,26 +424,26 @@ bool ULookScopesSubsystem::IsAIGradingEnabled() const
 
 void ULookScopesSubsystem::SetAIGradingIntensity(float InIntensity)
 {
+	CachedAIIntensity = InIntensity;
 	if (AIColorGrader.IsValid())
-	{
 		AIColorGrader->SetIntensity(InIntensity);
-	}
+	SaveAIGradingConfig();
 }
 
 void ULookScopesSubsystem::SetAIGradingInterval(float Seconds)
 {
+	CachedAIInterval = Seconds;
 	if (AIColorGrader.IsValid())
-	{
 		AIColorGrader->SetInferenceInterval(Seconds);
-	}
+	SaveAIGradingConfig();
 }
 
 void ULookScopesSubsystem::SetAIGradingTransitionTime(float Seconds)
 {
+	CachedAITransition = Seconds;
 	if (AIColorGrader.IsValid())
-	{
 		AIColorGrader->SetTransitionTime(Seconds);
-	}
+	SaveAIGradingConfig();
 }
 
 void ULookScopesSubsystem::TriggerAIInferOnce()
@@ -451,11 +459,139 @@ FAIColorGrader* ULookScopesSubsystem::GetAIColorGrader() const
 	return AIColorGrader.Get();
 }
 
+// ============================================================
+// Bloom Config Persistence
+// ============================================================
+
+static const TCHAR* BloomConfigSection = TEXT("/Script/LookScopes.BloomSettings");
+
+void ULookScopesSubsystem::SaveBloomConfig() const
+{
+	if (!BloomViewExtension.IsValid()) return;
+
+	const FCustomBloomParams& P = BloomViewExtension->GetBloomParams();
+	const bool bOn = BloomViewExtension->IsEnabled();
+
+	GConfig->SetBool(BloomConfigSection, TEXT("bEnabled"), bOn, GEditorPerProjectIni);
+	GConfig->SetFloat(BloomConfigSection, TEXT("SceneBloomIntensity"), P.SceneBloomIntensity, GEditorPerProjectIni);
+	GConfig->SetFloat(BloomConfigSection, TEXT("SceneBloomThreshold"), P.SceneBloomThreshold, GEditorPerProjectIni);
+	GConfig->SetFloat(BloomConfigSection, TEXT("VFXBloomIntensity"), P.VFXBloomIntensity, GEditorPerProjectIni);
+	GConfig->SetFloat(BloomConfigSection, TEXT("VFXBloomThreshold"), P.VFXBloomThreshold, GEditorPerProjectIni);
+	GConfig->SetInt(BloomConfigSection, TEXT("BloomLevels"), P.BloomLevels, GEditorPerProjectIni);
+	GConfig->SetFloat(BloomConfigSection, TEXT("Scatter"), P.Scatter, GEditorPerProjectIni);
+	GConfig->SetFloat(BloomConfigSection, TEXT("MaxBrightness"), P.MaxBrightness, GEditorPerProjectIni);
+	GConfig->SetFloat(BloomConfigSection, TEXT("TemporalWeight"), P.TemporalWeight, GEditorPerProjectIni);
+
+	GConfig->Flush(false, GEditorPerProjectIni);
+}
+
+void ULookScopesSubsystem::LoadBloomConfig()
+{
+	if (!BloomViewExtension.IsValid()) return;
+
+	bool bEnabled = false;
+	if (GConfig->GetBool(BloomConfigSection, TEXT("bEnabled"), bEnabled, GEditorPerProjectIni))
+	{
+		BloomViewExtension->SetEnabled(bEnabled);
+	}
+
+	FCustomBloomParams P = BloomViewExtension->GetBloomParams();
+	bool bHasAny = false;
+
+	float F; int32 I;
+	if (GConfig->GetFloat(BloomConfigSection, TEXT("SceneBloomIntensity"), F, GEditorPerProjectIni)) { P.SceneBloomIntensity = F; bHasAny = true; }
+	if (GConfig->GetFloat(BloomConfigSection, TEXT("SceneBloomThreshold"), F, GEditorPerProjectIni)) { P.SceneBloomThreshold = F; bHasAny = true; }
+	if (GConfig->GetFloat(BloomConfigSection, TEXT("VFXBloomIntensity"), F, GEditorPerProjectIni))   { P.VFXBloomIntensity = F; bHasAny = true; }
+	if (GConfig->GetFloat(BloomConfigSection, TEXT("VFXBloomThreshold"), F, GEditorPerProjectIni))   { P.VFXBloomThreshold = F; bHasAny = true; }
+	if (GConfig->GetInt(BloomConfigSection, TEXT("BloomLevels"), I, GEditorPerProjectIni))            { P.BloomLevels = I; bHasAny = true; }
+	if (GConfig->GetFloat(BloomConfigSection, TEXT("Scatter"), F, GEditorPerProjectIni))              { P.Scatter = F; bHasAny = true; }
+	if (GConfig->GetFloat(BloomConfigSection, TEXT("MaxBrightness"), F, GEditorPerProjectIni))        { P.MaxBrightness = F; bHasAny = true; }
+	if (GConfig->GetFloat(BloomConfigSection, TEXT("TemporalWeight"), F, GEditorPerProjectIni))       { P.TemporalWeight = F; bHasAny = true; }
+
+	if (bHasAny)
+	{
+		BloomViewExtension->SetBloomParams(P);
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("LookScopes: Bloom config loaded (enabled=%d)"), bEnabled ? 1 : 0);
+}
+
+// ============================================================
+// AI Grading Config Persistence
+// ============================================================
+
+static const TCHAR* AIGradingConfigSection = TEXT("/Script/LookScopes.AIGradingSettings");
+
+void ULookScopesSubsystem::SaveAIGradingConfig() const
+{
+	GConfig->SetFloat(AIGradingConfigSection, TEXT("Intensity"), CachedAIIntensity, GEditorPerProjectIni);
+	GConfig->SetFloat(AIGradingConfigSection, TEXT("InferenceInterval"), CachedAIInterval, GEditorPerProjectIni);
+	GConfig->SetFloat(AIGradingConfigSection, TEXT("TransitionTime"), CachedAITransition, GEditorPerProjectIni);
+
+	GConfig->Flush(false, GEditorPerProjectIni);
+}
+
+void ULookScopesSubsystem::LoadAIGradingConfig()
+{
+	float F;
+	if (GConfig->GetFloat(AIGradingConfigSection, TEXT("Intensity"), F, GEditorPerProjectIni))
+		CachedAIIntensity = F;
+	if (GConfig->GetFloat(AIGradingConfigSection, TEXT("InferenceInterval"), F, GEditorPerProjectIni))
+		CachedAIInterval = F;
+	if (GConfig->GetFloat(AIGradingConfigSection, TEXT("TransitionTime"), F, GEditorPerProjectIni))
+		CachedAITransition = F;
+
+	if (AIColorGrader.IsValid())
+	{
+		AIColorGrader->SetIntensity(CachedAIIntensity);
+		AIColorGrader->SetInferenceInterval(CachedAIInterval);
+		AIColorGrader->SetTransitionTime(CachedAITransition);
+	}
+}
+
+// ============================================================
+// Toolbar Config Persistence
+// ============================================================
+
+static const TCHAR* ToolbarConfigSection = TEXT("/Script/LookScopes.ToolbarSettings");
+
+void ULookScopesSubsystem::SetRealtimeInterval(float Seconds)
+{
+	CachedRealtimeInterval = FMath::Max(Seconds, 0.05f);
+	if (SessionManager.IsValid())
+		SessionManager->SetRealtimeInterval(CachedRealtimeInterval);
+	SaveToolbarConfig();
+}
+
+void ULookScopesSubsystem::SaveToolbarConfig() const
+{
+	GConfig->SetFloat(ToolbarConfigSection, TEXT("RealtimeInterval"), CachedRealtimeInterval, GEditorPerProjectIni);
+	GConfig->SetInt(ToolbarConfigSection, TEXT("ResolutionX"), StreamResolution.X, GEditorPerProjectIni);
+	GConfig->SetInt(ToolbarConfigSection, TEXT("ResolutionY"), StreamResolution.Y, GEditorPerProjectIni);
+
+	GConfig->Flush(false, GEditorPerProjectIni);
+}
+
+void ULookScopesSubsystem::LoadToolbarConfig()
+{
+	float F; int32 IX, IY;
+	if (GConfig->GetFloat(ToolbarConfigSection, TEXT("RealtimeInterval"), F, GEditorPerProjectIni))
+		CachedRealtimeInterval = FMath::Max(F, 0.05f);
+	if (GConfig->GetInt(ToolbarConfigSection, TEXT("ResolutionX"), IX, GEditorPerProjectIni) &&
+		GConfig->GetInt(ToolbarConfigSection, TEXT("ResolutionY"), IY, GEditorPerProjectIni))
+		StreamResolution = FIntPoint(IX, IY);
+}
+
+// ============================================================
+// Bloom Setters
+// ============================================================
+
 void ULookScopesSubsystem::SetCustomBloomEnabled(bool bEnabled)
 {
 	if (BloomViewExtension.IsValid())
 	{
 		BloomViewExtension->SetEnabled(bEnabled);
+		SaveBloomConfig();
 	}
 }
 
@@ -464,39 +600,50 @@ bool ULookScopesSubsystem::IsCustomBloomEnabled() const
 	return BloomViewExtension.IsValid() && BloomViewExtension->IsEnabled();
 }
 
+FCustomBloomParams ULookScopesSubsystem::GetBloomParams() const
+{
+	if (BloomViewExtension.IsValid()) return BloomViewExtension->GetBloomParams();
+	return FCustomBloomParams();
+}
+
 void ULookScopesSubsystem::SetSceneBloomIntensity(float V)
 {
-	if (BloomViewExtension.IsValid()) BloomViewExtension->SetSceneBloomIntensity(V);
+	if (BloomViewExtension.IsValid()) { BloomViewExtension->SetSceneBloomIntensity(V); SaveBloomConfig(); }
 }
 
 void ULookScopesSubsystem::SetSceneBloomThreshold(float V)
 {
-	if (BloomViewExtension.IsValid()) BloomViewExtension->SetSceneBloomThreshold(V);
+	if (BloomViewExtension.IsValid()) { BloomViewExtension->SetSceneBloomThreshold(V); SaveBloomConfig(); }
 }
 
 void ULookScopesSubsystem::SetVFXBloomIntensity(float V)
 {
-	if (BloomViewExtension.IsValid()) BloomViewExtension->SetVFXBloomIntensity(V);
+	if (BloomViewExtension.IsValid()) { BloomViewExtension->SetVFXBloomIntensity(V); SaveBloomConfig(); }
 }
 
 void ULookScopesSubsystem::SetVFXBloomThreshold(float V)
 {
-	if (BloomViewExtension.IsValid()) BloomViewExtension->SetVFXBloomThreshold(V);
+	if (BloomViewExtension.IsValid()) { BloomViewExtension->SetVFXBloomThreshold(V); SaveBloomConfig(); }
 }
 
 void ULookScopesSubsystem::SetBloomLevels(int32 V)
 {
-	if (BloomViewExtension.IsValid()) BloomViewExtension->SetBloomLevels(V);
+	if (BloomViewExtension.IsValid()) { BloomViewExtension->SetBloomLevels(V); SaveBloomConfig(); }
 }
 
 void ULookScopesSubsystem::SetBloomScatter(float V)
 {
-	if (BloomViewExtension.IsValid()) BloomViewExtension->SetBloomScatter(V);
+	if (BloomViewExtension.IsValid()) { BloomViewExtension->SetBloomScatter(V); SaveBloomConfig(); }
 }
 
 void ULookScopesSubsystem::SetMaxBrightness(float V)
 {
-	if (BloomViewExtension.IsValid()) BloomViewExtension->SetMaxBrightness(V);
+	if (BloomViewExtension.IsValid()) { BloomViewExtension->SetMaxBrightness(V); SaveBloomConfig(); }
+}
+
+void ULookScopesSubsystem::SetTemporalWeight(float V)
+{
+	if (BloomViewExtension.IsValid()) { BloomViewExtension->SetTemporalWeight(V); SaveBloomConfig(); }
 }
 
 void ULookScopesSubsystem::SetBloomDebugMode(int32 Mode)
