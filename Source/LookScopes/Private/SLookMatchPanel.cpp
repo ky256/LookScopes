@@ -121,7 +121,7 @@ void SLookMatchPanel::Construct(const FArguments& InArgs)
 
 		// === 可折叠内容（工具栏 + 预览 + 示波器） ===
 		+ SVerticalBox::Slot()
-		.FillHeight(1.0f)
+		.AutoHeight()
 		[
 			SNew(SBox)
 			.Visibility_Lambda([this]()
@@ -147,7 +147,7 @@ void SLookMatchPanel::Construct(const FArguments& InArgs)
 
 				// 主体内容区（左右分栏）
 				+ SVerticalBox::Slot()
-				.FillHeight(1.0f)
+				.AutoHeight()
 				[
 					SNew(SHorizontalBox)
 
@@ -176,28 +176,29 @@ void SLookMatchPanel::Construct(const FArguments& InArgs)
 			]
 		]
 
-		// === AI 调色区（含可折叠 section header） ===
+		// === 设置面板滚动区域（AI 调色 / Bloom / 画廊） ===
 		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(0.0f, 4.0f, 0.0f, 0.0f)
+		.FillHeight(1.0f)
 		[
-			BuildAIGradingArea()
-		]
+			SNew(SScrollBox)
 
-		// === Custom Bloom 区（含可折叠 section header） ===
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(0.0f, 4.0f, 0.0f, 0.0f)
-		[
-			BuildCustomBloomArea()
-		]
+			+ SScrollBox::Slot()
+			.Padding(0.0f, 4.0f, 0.0f, 0.0f)
+			[
+				BuildAIGradingArea()
+			]
 
-		// === 底部画廊区（含可折叠 section header） ===
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(0.0f, 4.0f, 0.0f, 0.0f)
-		[
-			BuildGalleryPlaceholder()
+			+ SScrollBox::Slot()
+			.Padding(0.0f, 4.0f, 0.0f, 0.0f)
+			[
+				BuildCustomBloomArea()
+			]
+
+			+ SScrollBox::Slot()
+			.Padding(0.0f, 4.0f, 0.0f, 0.0f)
+			[
+				BuildGalleryPlaceholder()
+			]
 		]
 	];
 
@@ -712,13 +713,14 @@ TSharedRef<SWidget> SLookMatchPanel::BuildViewportPlaceholder()
 
 		// 输入图像预览纹理显示（可折叠）
 		+ SVerticalBox::Slot()
-		.FillHeight(1.0f)
+		.AutoHeight()
 		[
 			SNew(SBox)
 			.Visibility_Lambda([this]()
 			{
 				return bPreviewVisible ? EVisibility::Visible : EVisibility::Collapsed;
 			})
+			.HeightOverride(300.0f)
 			.Padding(4.0f)
 			[
 				SAssignNew(InputPreviewDisplay, SScopeTextureDisplay)
@@ -789,7 +791,7 @@ TSharedRef<SWidget> SLookMatchPanel::BuildScopesArea()
 
 		// Scopes 内容（可折叠）
 		+ SVerticalBox::Slot()
-		.FillHeight(1.0f)
+		.AutoHeight()
 		[
 			SNew(SBox)
 			.Visibility_Lambda([this]()
@@ -801,7 +803,7 @@ TSharedRef<SWidget> SLookMatchPanel::BuildScopesArea()
 
 				// 波形图
 				+ SVerticalBox::Slot()
-				.FillHeight(0.5f)
+				.AutoHeight()
 				.Padding(4.0f)
 				[
 					SNew(SVerticalBox)
@@ -843,17 +845,21 @@ TSharedRef<SWidget> SLookMatchPanel::BuildScopesArea()
 					]
 
 					+ SVerticalBox::Slot()
-					.FillHeight(1.0f)
+					.AutoHeight()
 					[
-						SAssignNew(WaveformDisplay, SScopeTextureDisplay)
-						.TextureWidth(512)
-						.TextureHeight(256)
+						SNew(SBox)
+						.HeightOverride(180.0f)
+						[
+							SAssignNew(WaveformDisplay, SScopeTextureDisplay)
+							.TextureWidth(512)
+							.TextureHeight(256)
+						]
 					]
 				]
 
 				// 直方图
 				+ SVerticalBox::Slot()
-				.FillHeight(0.5f)
+				.AutoHeight()
 				.Padding(4.0f)
 				[
 					SNew(SVerticalBox)
@@ -895,11 +901,15 @@ TSharedRef<SWidget> SLookMatchPanel::BuildScopesArea()
 					]
 
 					+ SVerticalBox::Slot()
-					.FillHeight(1.0f)
+					.AutoHeight()
 					[
-						SAssignNew(HistogramDisplay, SScopeTextureDisplay)
-						.TextureWidth(512)
-						.TextureHeight(256)
+						SNew(SBox)
+						.HeightOverride(180.0f)
+						[
+							SAssignNew(HistogramDisplay, SScopeTextureDisplay)
+							.TextureWidth(512)
+							.TextureHeight(256)
+						]
 					]
 				]
 			]

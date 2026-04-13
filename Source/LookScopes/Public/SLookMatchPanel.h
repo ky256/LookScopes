@@ -129,8 +129,8 @@ private:
 	// --- 面板折叠状态 ---
 
 	bool bMainContentVisible = true;
-	bool bPreviewVisible = true;
-	bool bScopesVisible = true;
+	bool bPreviewVisible = false;
+	bool bScopesVisible = false;
 	bool bGalleryVisible = true;
 	bool bAIGradingVisible = true;
 	bool bBloomVisible = true;
