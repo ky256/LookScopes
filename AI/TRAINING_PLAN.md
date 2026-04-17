@@ -127,6 +127,26 @@ L_smooth  = MSE(weights_t, weights_{t-1})                 # 时序平滑 (阶段
 备注: 3DLUT 仓库提供了 480p 版本，直接可用
 ```
 
+#### 路线 A+：PST50 电影级参考配对（高质量，补强 Phase 2）
+
+```
+来源: Hugging Face — zrgong/PST50
+链接: https://huggingface.co/datasets/zrgong/PST50
+内容: 50 组 photorealistic style transfer 配对 (原图, 电影风格调色图)
+配套论文: SA-LUT (https://huggingface.co/papers/2506.13465)
+格式: (原图, 调好色的图) — 与 FiveK 格式完全一致
+用途: Phase 2 与 FiveK + LUT 批量数据 ConcatDataset 并用
+价值: LUT 批量数据是线性变换生成，无法表达"同一色在不同上下文的差异化处理";
+      PST50 是真实调色师的配对，隐含上下文条件分布，显著提升 Classifier 泛化
+集成: 新增 PST50Dataset 类 (~50 行)，main() 里 ConcatDataset 一行拼接,
+      网络/loss/训练循环完全不改
+陷阱: 部分配对 input/target 尺寸可能不一致，接入前必须 assert 或 resize 对齐
+      再做 RandomCrop (FiveKDataset 当前实现要求两图尺寸相同)
+
+注意: 只用它的数据，不用它的模型 —— SA-LUT 的 4D 空间自适应 LUT 架构
+      与我们的 [3,33,33,33] 标准 LUT + UE 原生 ColorGradingLUT 注入管线不兼容
+```
+
 #### 路线 B：LUT 批量造数据（量大，覆盖多种风格）
 
 ```
@@ -160,11 +180,19 @@ L_smooth  = MSE(weights_t, weights_{t-1})                 # 时序平滑 (阶段
 ### 3.3 数据使用计划
 
 ```
-Phase 1: FiveK 数据集           ← 验证代码，确保管线跑通
-Phase 2: LUT 批量造数据          ← 正式训练，覆盖多种风格
-Phase 3: 达芬奇手动调色          ← 微调，注入个人审美
-Phase 4: 部署后收集游戏实际数据   ← 持续优化
+Phase 1: FiveK 数据集 (纯净基准)                 ← 验证代码，对照论文 PSNR
+Phase 2: FiveK + PST50 + LUT 批量造数据 (并用)    ← 正式训练，覆盖多种风格
+Phase 3: 达芬奇手动调色                          ← 微调，注入个人审美
+Phase 4: 部署后收集游戏实际数据                   ← 持续优化
 ```
+
+Phase 2 数据组合策略:
+- FiveK       : 5000 对      — 专业修图基线
+- PST50       : 50 组        — 电影级高质量配对 (高权重采样)
+- LUT 批量    : 10~20 万对   — 广度覆盖，教模型"LUT 空间长什么样"
+
+风险控制: 若加入 PST50 后 FiveK 验证集 PSNR 下降超过 0.5 dB，
+         说明风格分布冲突过大，退回纯 LUT 批量方案，PST50 留给 Phase 3 微调。
 
 LUT 数据资源待收集:
 - [ ] GitHub 免费 LUT 集合
@@ -431,4 +459,15 @@ Phase 4 — 风格扩展
 - [ ] 免费 .cube LUT 收集（目标 200~500 个）
 - [ ] 训练机 Python/PyTorch 环境搭建
 - [ ] 是否引入 CycleGAN 做无配对风格训练（进阶）
-- [ ] 是否引入双边网格做局部调色（进阶，参考 LUTwithBGrid）
+- [ ] 风格条件注入方式（Phase 3 决策）:
+  - 方案 A: 风格 ID 嵌入向量 (玩家下拉选"电影/胶片/赛博")
+  - 方案 B: 参考图特征提取 (玩家拖一张参考图进来，模型自动匹配) —— 参考
+    SA-LUT (https://huggingface.co/papers/2506.13465) 的参考图条件分支设计,
+    天然对齐 LookScopes 第 6 支柱"参考画廊"的现有 UI 流
+- [ ] 局部调色方案选型（进阶）:
+  - LUTwithBGrid: 双边网格 + 3D LUT (轻量，Compute Shader 可实现，
+    仍输出标准 [3,33,33,33] LUT，兼容 UE 原生注入管线)
+  - SA-LUT: 4D 空间自适应 LUT (表达力强，但需完全替换 UE 原生 LUT 注入,
+    并破坏示波器可验证性 — 违反 DesignDoc 第一性原理"工具用于测量")
+  - 决策点: 先跑全局 3D LUT 到 Phase 2 结束，看真实游戏画面上
+    是否出现"天空和皮肤需要差异化处理"的需求，再决定是否引入局部调色
