@@ -15,3 +15,11 @@ AI/debug/
 
 # 临时文件
 *.log
+
+# MetaAgent 运行时状态（不入库）
+# 说明：仅忽略 session 级锁/临时 state，docs/memory 与 docs/distilled 下的内容随项目走
+infra/hooks/.*.json
+infra/hooks/.*.jsonl
+infra/hooks/*.lock
+infra/hooks/*.log
+__pycache__/

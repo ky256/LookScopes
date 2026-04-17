@@ -1,0 +1,33 @@
+---
+description: 知识蒸馏审查 — 提醒中控检查待审批的蒸馏 proposal
+alwaysApply: true
+---
+
+# 蒸馏审查提醒
+
+在每个新会话开始时，检查 `docs/distilled/proposals/` 目录是否有待审批的 proposal 文件。
+
+## 检查流程
+
+1. 扫描 `docs/distilled/proposals/*.json`
+2. 如果存在文件，读取并向用户汇报：
+   - 有几个待审批的 proposal
+   - 每个 proposal 的类型（rule:create/preference:persist 等）和置信度
+   - 建议用户审批或拒绝
+3. 如果目录为空或不存在，静默跳过
+
+## 审批操作
+
+用户批准 proposal 后：
+1. 修改 proposal 文件的 `status` 字段为 `"approved"`
+2. 运行 `py -3 .cursor/hooks/distill_knowledge.py --mode apply` 应用变更
+
+用户拒绝 proposal 后：
+1. 修改 proposal 文件的 `status` 字段为 `"rejected"`
+2. 将文件移动到 `docs/distilled/rejected/`
+
+## 度量检查
+
+同时检查 `docs/distilled/metrics/system-health.json`：
+- 如果 `circuit_breaker` 为 `"triggered"`，警告用户蒸馏已暂停
+- 如果有 vitality < 40 的规则，提醒用户关注

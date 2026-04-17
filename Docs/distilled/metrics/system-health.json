@@ -1,0 +1,10 @@
+{
+  "updated": "",
+  "total_rules_applied": 0,
+  "total_proposals_pending": 0,
+  "correction_rate_7d": 0.0,
+  "correction_rate_30d": 0.0,
+  "trend": "stable",
+  "circuit_breaker": "normal",
+  "vitality_avg": 0
+}

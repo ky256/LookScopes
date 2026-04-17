@@ -7,6 +7,12 @@
         "davinci_mcp"
       ],
       "disabled": false
+    },
+    "memory-mcp": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["infra/memory-mcp/server.py"],
+      "description": "记忆查询服务 — 摘要读取、详情钻取、日期列表"
     }
   }
 }

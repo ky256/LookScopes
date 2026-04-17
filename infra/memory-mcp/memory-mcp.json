@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "memory-mcp": {
+      "command": "python",
+      "args": ["infra/memory-mcp/server.py"],
+      "env": {}
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "hooks": {
+    "stop": [
+      {
+        "command": "python infra/hooks/summarize_session.py --mode throttled"
+      },
+      {
+        "command": "python infra/hooks/collect_experience.py --mode mark"
+      },
+      {
+        "command": "python infra/hooks/archive_plans.py"
+      }
+    ],
+    "sessionEnd": [
+      {
+        "command": "python infra/hooks/summarize_session.py --mode final"
+      },
+      {
+        "command": "python infra/hooks/collect_experience.py --mode extract"
+      },
+      {
+        "command": "python infra/hooks/distill_knowledge.py --mode incremental"
+      },
+      {
+        "command": "python infra/hooks/archive_plans.py"
+      }
+    ]
+  }
+}

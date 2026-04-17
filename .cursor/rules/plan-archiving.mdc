@@ -1,0 +1,35 @@
+---
+description: Plan 归档规则 — 用户确认 plan 后自动归档到 docs/plans/
+alwaysApply: true
+---
+
+# Plan 自动归档
+
+当用户确认一个 Plan 并准备开始执行时，在执行第一个 todo **之前**，执行以下归档流程：
+
+## 归档判断
+
+判断该 Plan 是否属于 MetaAgent 项目。依据：
+- Plan 是否在 MetaAgent workspace 中创建
+- Plan 内容是否涉及 MetaAgent 的文件路径（如 `.cursor/hooks/`、`docs/`、`.cursor/agents/`）
+- Plan 内容是否涉及 MetaAgent 的架构概念（如中控 Agent、Blueprint DNA、Subagent）
+
+不属于本项目的 Plan 跳过归档。
+
+## 归档操作
+
+1. 读取 Plan 的 YAML frontmatter 中的 `name` 字段
+2. 将 `name` 转为 kebab-case 作为文件名（如 `CodeBuddy Proxy for Cursor` → `codebuddy-proxy-for-cursor`）
+3. 将 Plan 文件复制到 `docs/plans/<kebab-name>.plan.md`
+4. 如果 `docs/plans/` 下已存在同名文件，用新版本覆盖
+
+## 示例
+
+Plan name: `Cursor Subagent Design`
+归档路径: `docs/plans/cursor-subagent-design.plan.md`
+
+## 注意
+
+- 归档是复制操作，不删除 `~/.cursor/plans/` 中的源文件
+- 归档在 todo 执行前完成，确保 Plan 内容在实现开始时就已进入仓库
+- 这是一个轻量操作（单次文件复制），由中控直接执行，不需要委派 Subagent
