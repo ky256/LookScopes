@@ -43,3 +43,29 @@
   - 决策: 采用 git checkout HEAD -- Docs/memory/details/.pending.md 方案清理工作区，丢弃 commit 触发的元操作记录
 - 详情: details/2026-04-17.md#L892-L1551
 
+
+## [2026-04-17] 会话 330500 — LookScopes AI调色模型训练、Bug修复与部署
+- 信号类型: failure
+- 描述: F.grid_sample实现3D LUT三线性插值时，轴顺序[ b, g, r]错误导致R/B通道互换。LUT实际轴序为[channel, B_idx, G_idx, R_idx]，grid_sample坐标应为[r, g, b]对应[W, H, D]
+- 信号类型: failure
+- 描述: Windows上Python多进程DataLoader需要if __name__ == '__main__'保护，否则会报RuntimeError
+- 信号类型: failure
+- 描述: 图片尺寸不一致导致batch拼接失败，需resize到固定尺寸才能使用batch_size>1
+- 信号类型: failure
+- 描述: 双Python版本(3.10/3.12)导致python和pip指向不同环境，需用绝对路径或python -m pip确保一致性
+- 信号类型: preference
+- 描述: 用户明确表示在memory等不可逆操作上偏好手动+人工审核，比自动化更稳健
+- 摘要上下文:
+  - 用户在训练机环境搭建LookScopes AI调色模型的训练管线，基于Image-Adaptive-3DLUT项目
+  - 解决了Git安装、Python/PyTorch环境配置（CPU版转CUDA版、双Python版本冲突）等问题
+  - 使用F.grid_sample替代CUDA自定义算子，通过resize图片解决batch_size=1的GPU利用率问题，训练速度提升4.8倍
+  - 发现grid_sample的轴顺序Bug导致R/B通道互换（紫色变红色），修复后重训PSNR从24.79提升至25.14 dB
+  - 导出ONNX模型和.cube文件，推送到LookScopes仓库
+  - 拉取开发机更新，审阅了新增PST50数据源、Phase 2数据组合策略、AI协作基础设施等内容
+  - 决策: 使用F.grid_sample替代CUDA三线性插值算子，避免Windows下编译问题
+  - 决策: 裁剪后resize到固定尺寸以支持batch_size=16，充分利用GPU
+  - 决策: 发现R/B通道互换Bug后，决定修复模型代码并完全重训，而非尝试后处理修正
+  - 决策: ONNX导出采用封装模型（Classifier + 基础LUT融合），输出融合后的3D LUT，便于UE原生管线使用
+  - 决策: 训练项目放训练脚本和转换程序，LookScopes项目只放最终可用的ONNX和.cube模型
+- 详情: details/2026-04-17.md#L1552-L2584
+
