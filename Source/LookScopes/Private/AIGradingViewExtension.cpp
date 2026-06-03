@@ -8,8 +8,29 @@
 #include "RenderGraphUtils.h"
 #include "ScreenPass.h"
 #include "PostProcess/PostProcessMaterialInputs.h"
+#include "HAL/IConsoleManager.h"
+#include "HAL/FileManager.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
+#include "Misc/DateTime.h"
+#include "ImageUtils.h"
+#include "Async/Async.h"
+#include <atomic>
 
 DEFINE_LOG_CATEGORY_STATIC(LogAICapture, Verbose, All);
+
+namespace
+{
+	static TAutoConsoleVariable<int32> CVarDumpAIInput(
+		TEXT("r.LookScopes.AI.DumpInput"),
+		0,
+		TEXT("Set to 1 to dump the next AI model input (256x256 RGBA8) as PNG under Saved/AIDebug/."),
+		ECVF_Cheat);
+
+	// One-shot 锁：防止 CAS 成功 → AsyncTask 清零 CVar 之间的窗口期内，
+	// 后续帧 readback 再次读到 CVar=1 导致多次落盘。
+	static std::atomic<bool> GAIDumpConsumed{false};
+}
 
 FAIGradingViewExtension::FAIGradingViewExtension(const FAutoRegister& AutoRegister)
 	: FSceneViewExtensionBase(AutoRegister)
@@ -88,6 +109,10 @@ FScreenPassTexture FAIGradingViewExtension::OnPreTonemapCapture_RenderThread(
 	constexpr int32 AI_SIZE = 256;
 	TShaderMapRef<FAIDownsampleCS> ComputeShader(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 
+	// FSceneView 只暴露 GetLastEyeAdaptationExposure() 这一个 exposure 取值 API；
+	// UE 内部 uniform buffer 的 View.PreExposure 以此为基础通过 UpdatePreExposure()
+	// 衍生，有一帧滞后但无更好的 public 替代。除以该值用于撤销 BasePass 乘入的
+	// pre-exposure，回到近似相机 linear 空间，给 AI 模型输入。
 	const float EyeExp = View.GetLastEyeAdaptationExposure();
 	const float PreExposure = EyeExp > 0.0f ? EyeExp : 1.0f;
 
@@ -223,6 +248,58 @@ FScreenPassTexture FAIGradingViewExtension::OnPreTonemapCapture_RenderThread(
 						CaptureLogCounter, *Chain,
 						SumR / (double)N, SumG / (double)N, SumB / (double)N,
 						MinV, MaxV);
+				}
+
+				// 一次性 PNG dump：CVar 置 1 则保存本次 readback 结果并异步归零，
+				// 避免持续写盘。IConsoleVariable::Set() 仅允许 game thread 调用，
+				// 故通过 AsyncTask 派发到 game thread 完成清零。
+				// CAS 抢占确保即使 CVar 清零尚未落地，后续帧的 readback 也不会重复触发。
+				if (CVarDumpAIInput.GetValueOnRenderThread() >= 1)
+				{
+					bool Expected = false;
+					if (GAIDumpConsumed.compare_exchange_strong(Expected, true))
+					{
+						const FString DumpDir = FPaths::ProjectSavedDir() / TEXT("AIDebug");
+						IFileManager::Get().MakeDirectory(*DumpDir, /*Tree=*/ true);
+
+						const FString Timestamp = FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S"));
+						const FString DumpPath = DumpDir / FString::Printf(TEXT("ue_input_%s.png"), *Timestamp);
+
+						// 使用 PNGCompressImageArray 而非已弃用的 CompressImageArray；
+						// 新 API 形参为 TArrayView64<const FColor> / TArray64<uint8>。
+						// FFileHelper::SaveArrayToFile 有 const TArray64<uint8>& 重载，直接传入即可。
+						TArray64<uint8> CompressedPng;
+						const TArrayView64<const FColor> PixelsView(Pixels.GetData(), Pixels.Num());
+						FImageUtils::PNGCompressImageArray(AI_SIZE, AI_SIZE, PixelsView, CompressedPng);
+
+						const bool bSaved = (CompressedPng.Num() > 0)
+							&& FFileHelper::SaveArrayToFile(CompressedPng, *DumpPath);
+
+						if (bSaved)
+						{
+							const FString AbsPath = FPaths::ConvertRelativePathToFull(DumpPath);
+							UE_LOG(LogAICapture, Log, TEXT("已保存 AI 输入样本: %s"), *AbsPath);
+						}
+						else
+						{
+							UE_LOG(LogAICapture, Warning,
+								TEXT("AI 输入样本保存失败: %s (compressed=%lld bytes)"),
+								*DumpPath, static_cast<int64>(CompressedPng.Num()));
+						}
+
+						// 归零 CVar 必须在 game thread 上做；按名字查而不捕获
+						// CVarDumpAIInput 指针，减少 lambda 对 static 符号的隐式耦合。
+						AsyncTask(ENamedThreads::GameThread, []()
+						{
+							if (IConsoleVariable* CVar = IConsoleManager::Get().FindConsoleVariable(
+									TEXT("r.LookScopes.AI.DumpInput")))
+							{
+								CVar->Set(TEXT("0"), ECVF_SetByConsole);
+							}
+							GAIDumpConsumed.store(false);
+						});
+					}
+					// CAS 失败：上一次 dump 尚未完成清零流程，本帧跳过，避免重复落盘。
 				}
 
 				FScopeLock Lock(&CaptureLock);

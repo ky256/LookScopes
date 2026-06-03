@@ -69,3 +69,24 @@
   - 决策: 训练项目放训练脚本和转换程序，LookScopes项目只放最终可用的ONNX和.cube模型
 - 详情: details/2026-04-17.md#L1552-L2584
 
+
+## [2026-04-17] 会话 7747bd — UE推理管线诊断与PST50数据集引入
+- 信号类型: failure
+- 描述: 发现UE管线中PreExposure(1/EyeExp)除法方向可能错误：MotionBlur Pass后的SceneColor可能未被乘以EyeAdaptation，此时除以PreExposure反而导致亮度反向调整，可能引发模型调色不准
+- 信号类型: failure
+- 描述: 识别出训练-推理Domain Shift风险：FiveK为消费级sRGB照片分布，UE经过ACES Tonemap的sRGB分布与其差异大，会导致Classifier预测偏差
+- 信号类型: pattern
+- 描述: 识别出数据集采样的反模式：PST50仅50组，若与20万LUT批量数据直接ConcatDataset，采样概率约0.025%形同虚设，必须使用WeightedRandomSampler或上采样
+- 摘要上下文:
+  - 确认了项目Git Hooks在拉取后能正确触发，Python 3.10环境及依赖均正常
+  - AI审查了UE侧推理代码，排除了RGB/BGR、FP16等常见坑，但发现PreExposure除法方向可能错误及训练/推理domain shift两个高嫌疑问题
+  - 制定了独立的UE管线诊断工单文档（UE_PIPELINE_AUDIT.md），交由开发机AI执行动态验证
+  - 评估了SA-LUT、DeOldify、Fast NST三个HF模型，判定仅SA-LUT的PST50数据集和论文思想有借鉴价值，不应替换现有主模型架构
+  - 将PST50数据集规划进Phase 2训练，并在TRAINING_PLAN.md中归档了参考图条件和局部调色的未来方向
+  - 提交并推送了包含诊断工单和训练计划更新的两个commit到远程仓库
+  - 决策: 暂不修改模型代码，优先由开发机验证UE管线PreExposure和Domain Shift问题
+  - 决策: 不采用SA-LUT等外部模型替换现有lut_predictor架构，保持UE原生LUT注入管线契约
+  - 决策: 在Phase 2引入PST50数据集（仅数据，不用模型），与FiveK和LUT批量数据联合训练
+  - 决策: 风格条件注入方式（ID嵌入vs参考图）和局部调色方案记入待确定清单，延后决策
+- 详情: details/2026-04-17.md#L2585-L3584
+
